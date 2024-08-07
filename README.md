@@ -44,15 +44,25 @@ This project includes code for the Kirby animation and interaction on the deskto
 ## Repository Structure
 
 coding-with-kirby/
+
 ├── big_kirby.py
+
 ├── big_kirby.spec
+
 ├── dist/
+
 │ └── big_kirby.app
+
 ├── README.md
+
 ├── requirements.txt
+
 └── resources/
+
 ├── y3il.gif
+
 ├── y3il-reverse.gif
+
 └── strberry.gif
 
 
