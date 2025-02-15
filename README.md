@@ -1,6 +1,4 @@
-Below is the perfectly structured **`README.md`** file, with separate sections for **installing the repository** and **running the macOS app**.
 
----
 
 # **Big Kirby – Virtual Desktop Pet Game**
 
