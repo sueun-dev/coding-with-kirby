@@ -144,7 +144,6 @@ This project is licensed under the **MIT License**. Feel free to use and modify 
 ---
 
 # **👨‍💻 Author**
-**Your Name**  
 GitHub: [sueun-dev](https://github.com/sueun-dev)  
 Email: sueun.dev@gmail.com
 
