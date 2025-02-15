@@ -1,0 +1,11 @@
+__pycache__
+*.py[c0]
+*.pyo
+
+kirby_state.json
+ranking.json
+*.swp
+*.sublime-workspace
+*.sublime-project
+*.sublime-metadata
+*.sublime-session
