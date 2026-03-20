@@ -2,7 +2,30 @@
 name = "coding-with-kirby"
 version = "2.3.0"
 description = "A desktop Kirby pet that lives on your screen while you code."
+readme = "README.md"
 requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "sueun-dev", email = "sueun.dev@gmail.com" }]
+keywords = ["desktop-pet", "kirby", "macos", "pyqt5"]
+
+dependencies = [
+    "PyQt5>=5.15",
+    "PyQt5-sip>=12.11",
+    "psutil>=5.9",
+    "pyobjc-core>=10.0",
+    "pyobjc-framework-Cocoa>=10.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "PyInstaller>=6.9",
+]
+
+[project.urls]
+Homepage = "https://github.com/sueun-dev/coding-with-kirby"
+Repository = "https://github.com/sueun-dev/coding-with-kirby"
+Issues = "https://github.com/sueun-dev/coding-with-kirby/issues"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
