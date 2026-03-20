@@ -92,6 +92,21 @@ class ParticleOverlay(QWidget):
             col = random.choice(colors)
             self.particles.append(Particle(x, y, c, col, random.randint(14, 22)))
 
+    def emit_sweat(self, x, y):
+        for _ in range(3):
+            col = QColor(100, 180, 255, 220)
+            p = Particle(x + random.randint(-10, 10), y - 10, "💧", col, random.randint(10, 16))
+            p.vel = QPointF(random.uniform(-0.5, 0.5), random.uniform(1.0, 2.5))
+            p.decay = 0.02
+            self.particles.append(p)
+
+    def emit_poop(self, x, y):
+        col = QColor(139, 90, 43)
+        p = Particle(x, y, "💩", col, 18)
+        p.vel = QPointF(0, -1.5)
+        p.decay = 0.015
+        self.particles.append(p)
+
     def _tick(self):
         self.particles = [p for p in self.particles if p.update()]
         if self.particles:

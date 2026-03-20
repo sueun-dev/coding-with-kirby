@@ -4,15 +4,15 @@ import os
 STATE_FILE = "kirby_state.json"
 RANKING_FILE = "ranking.json"
 
-# Food definitions: (image_index, name, hunger_restore, xp_reward)
+# Food definitions: (emoji, name, hunger_restore, xp_reward)
 FOODS = [
-    (1, "Apple", 10, 5),
-    (2, "Cake", 25, 15),
-    (3, "Burger", 30, 20),
-    (4, "Pizza", 35, 25),
-    (5, "Sushi", 20, 30),
-    (6, "Ice Cream", 15, 10),
-    (7, "Star Candy", 5, 50),
+    ("\U0001F34E", "Apple", 10, 5),
+    ("\U0001F370", "Cake", 25, 15),
+    ("\U0001F354", "Burger", 30, 20),
+    ("\U0001F355", "Pizza", 35, 25),
+    ("\U0001F363", "Sushi", 20, 30),
+    ("\U0001F366", "Ice Cream", 15, 10),
+    ("\U00002B50", "Star Candy", 5, 50),
 ]
 
 ACHIEVEMENTS = [

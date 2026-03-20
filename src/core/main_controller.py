@@ -1,11 +1,14 @@
 import os
 import json
 import random
+import datetime
+import psutil
 from PyQt5.QtWidgets import QInputDialog, QSystemTrayIcon, QMenu, QAction, QWidgetAction, QLabel
 from PyQt5.QtGui import QIcon, QPixmap, QPainter, QColor, QFont, QImage
-from PyQt5.QtCore import QTimer, Qt, QSize
+from PyQt5.QtCore import QTimer, Qt, QSize, QPointF
 from widgets.pet_widget import PetWidget
 from widgets.snack_widget import SnackWidget
+from widgets.poop_widget import PoopWidget
 from widgets.thought_bubble import ThoughtBubble
 from utils.utils import (
     STATE_FILE, RANKING_FILE, ACHIEVEMENTS, xp_for_level, resource_path,
@@ -39,6 +42,8 @@ class MainController:
     MOOD_TICK_MS = 2000
     SLEEP_THRESHOLD_S = 60
     TRAY_REFRESH_MS = 1000
+    EVENT_TICK_MS = 15_000  # random events every 15s
+    CPU_TICK_MS = 5000
 
     def __init__(self, app):
         self.app = app
@@ -56,7 +61,10 @@ class MainController:
         self.mood = "happy"
         self.unlocked_achievements = set()
         self.snacks = []
+        self.poops = []
         self._idle_seconds = 0
+        self._eats_since_poop = 0
+        self._cpu_percent = 0.0
 
         # Widgets (no snack bar — everything in tray)
         self.particles = ParticleOverlay()
@@ -86,6 +94,19 @@ class MainController:
         self._tray_refresh = QTimer()
         self._tray_refresh.timeout.connect(self._refresh_tray)
         self._tray_refresh.start(self.TRAY_REFRESH_MS)
+
+        # Random events timer
+        self._event_timer = QTimer()
+        self._event_timer.timeout.connect(self._random_event)
+        self._event_timer.start(self.EVENT_TICK_MS)
+
+        # CPU monitor timer
+        self._cpu_timer = QTimer()
+        self._cpu_timer.timeout.connect(self._cpu_tick)
+        self._cpu_timer.start(self.CPU_TICK_MS)
+
+        # Time-based greeting on start
+        self._time_greeting()
 
     @property
     def xp_for_next_level(self):
@@ -220,6 +241,7 @@ class MainController:
         self.hunger = max(0, self.hunger - snack.hunger_restore)
         self._add_xp(snack.xp_reward)
         self.total_eats += 1
+        self._eats_since_poop += 1
         if snack.food_name == "Star Candy":
             self.star_eats += 1
 
@@ -238,6 +260,10 @@ class MainController:
         self._remove_snack(snack)
         self._reset_idle()
         self._check_achievements()
+
+        # Poop chance after eating
+        if self._eats_since_poop >= 3 and random.random() < 0.4:
+            self._spawn_poop()
 
     # --- XP / Level ---
 
@@ -328,6 +354,106 @@ class MainController:
         if ach.get("star_req", 0) > 0 and self.star_eats < ach["star_req"]:
             return False
         return True
+
+    # --- Poop ---
+
+    def _spawn_poop(self):
+        self._eats_since_poop = 0
+        pos = self.pet.pos()
+        poop = PoopWidget(pos.x() + self.pet.width() // 2, pos.y() + self.pet.height(), self)
+        self.poops.append(poop)
+        self.bubble.show_text(random.choice(["Oops...", "Uh oh~", "Excuse me!"]), 2000)
+
+    def clean_poop(self, poop):
+        if poop in self.poops:
+            poop.close()
+            self.poops.remove(poop)
+            self._add_xp(5)
+            center = poop.frameGeometry().center()
+            self.particles.emit_eat(center.x(), center.y())
+            self.bubble.show_text(random.choice(["Thanks!", "Clean~!", "Sparkle!"]), 1500)
+
+    # --- Random Events ---
+
+    def _random_event(self):
+        if self.mood == "sleeping":
+            return
+        if random.random() > 0.3:  # 30% chance each tick
+            return
+
+        events = [
+            self._event_trip,
+            self._event_find_star,
+            self._event_dance,
+            self._event_sneeze,
+            self._event_hiccup,
+        ]
+        random.choice(events)()
+
+    def _event_trip(self):
+        self.bubble.show_text("*trips* Poyo!", 2500)
+        center = self.pet.frameGeometry().center()
+        self.particles.emit_eat(center.x(), center.y())
+        # Give a little bounce
+        self.pet.vel.setY(-3.0)
+
+    def _event_find_star(self):
+        self._add_xp(10)
+        self.bubble.show_text("Found a star! +10 XP!", 3000)
+        center = self.pet.frameGeometry().center()
+        self.particles.emit_achievement(center.x(), center.y())
+
+    def _event_dance(self):
+        self.bubble.show_text("Dance time!", 3000)
+        center = self.pet.frameGeometry().center()
+        # Quick side-to-side movement
+        self.pet.vel = QPointF(random.choice([-4, 4]), -2)
+        for _ in range(6):
+            self.particles.emit_heart(
+                center.x() + random.randint(-30, 30),
+                center.y() + random.randint(-30, 30),
+            )
+
+    def _event_sneeze(self):
+        self.bubble.show_text("Achoo!", 2000)
+        # Sneeze pushes Kirby back
+        self.pet.vel = QPointF(
+            -3.0 if self.pet.is_facing_right else 3.0, -1.0
+        )
+
+    def _event_hiccup(self):
+        self.bubble.show_text("*hic* ...hic!", 2500)
+        self.pet.vel.setY(-2.5)
+
+    # --- CPU Monitor ---
+
+    def _cpu_tick(self):
+        self._cpu_percent = psutil.cpu_percent(interval=None)
+        if self._cpu_percent > 80:
+            self.bubble.show_text(
+                random.choice(["So hot...", "CPU burning!", "Need rest...", "Working hard!"]),
+                3000,
+            )
+            center = self.pet.frameGeometry().center()
+            self.particles.emit_sweat(center.x(), center.y())
+
+    # --- Time-based ---
+
+    def _time_greeting(self):
+        hour = datetime.datetime.now().hour
+        if 5 <= hour < 9:
+            msg = "Good morning! Let's code!"
+        elif 9 <= hour < 12:
+            msg = "Time to be productive!"
+        elif 12 <= hour < 14:
+            msg = "Lunch time? Feed me!"
+        elif 14 <= hour < 18:
+            msg = "Afternoon coding session!"
+        elif 18 <= hour < 22:
+            msg = "Evening already? Keep going!"
+        else:
+            msg = "So late... still coding?"
+        QTimer.singleShot(2000, lambda: self.bubble.show_text(msg, 4000))
 
     # --- Bubble follow ---
 

@@ -2,8 +2,8 @@ import random
 import math
 from enum import Enum, auto
 from PyQt5.QtWidgets import QLabel, QWidget, QApplication
-from PyQt5.QtGui import QMovie
-from PyQt5.QtCore import Qt, QTimer, QPointF
+from PyQt5.QtGui import QMovie, QCursor
+from PyQt5.QtCore import Qt, QTimer, QPointF, QPoint
 from utils.utils import resource_path
 from utils.macos_window import pin_window_above_mission_control
 
@@ -13,6 +13,7 @@ class State(Enum):
     IDLE = auto()
     CHASING = auto()
     RESTING = auto()
+    THROWN = auto()
 
 
 class PetWidget(QWidget):
@@ -27,6 +28,8 @@ class PetWidget(QWidget):
     ACCELERATION = 0.08
     FRICTION = 0.96
     TURN_SMOOTHING = 0.06
+    THROW_FRICTION = 0.985
+    THROW_GRAVITY = 0.15
 
     def __init__(self, controller):
         super().__init__()
@@ -34,12 +37,14 @@ class PetWidget(QWidget):
         self.scale_factor = 1.0
         self._dragging = False
         self._drag_offset = None
+        self._drag_positions = []  # for throw velocity calculation
 
         # Physics
         self.pos_f = QPointF(0, 0)
         self.vel = QPointF(0, 0)
         self.target_dir = QPointF(1, 0)
         self.is_facing_right = True
+        self._throw_bounces = 0
 
         # State machine
         self.state = State.WANDERING
@@ -85,6 +90,14 @@ class PetWidget(QWidget):
     def _tick(self):
         if self._dragging:
             return
+
+        # Thrown state (flung by user)
+        if self.state == State.THROWN:
+            self._do_thrown()
+            self._apply_velocity()
+            self.controller.check_collision()
+            return
+
         if self.controller.mood == "sleeping":
             # Slow to a stop
             self.vel *= 0.92
@@ -205,6 +218,21 @@ class PetWidget(QWidget):
         self._clamp_speed(self.CHASE_MAX_SPEED)
         self._update_facing()
 
+    def _do_thrown(self):
+        """Kirby was flung — apply gravity and high friction until stopped."""
+        self.vel = QPointF(
+            self.vel.x() * self.THROW_FRICTION,
+            self.vel.y() * self.THROW_FRICTION + self.THROW_GRAVITY,
+        )
+        self._update_facing()
+        speed = math.hypot(self.vel.x(), self.vel.y())
+        if speed < 0.5:
+            self._throw_bounces = 0
+            self._enter_wandering()
+            self.controller.bubble.show_text(
+                random.choice(["Whoa!", "Dizzy...", "Poyo~?!", "Again!!"]), 2000
+            )
+
     # --- Physics helpers ---
 
     def _apply_velocity(self):
@@ -244,22 +272,33 @@ class PetWidget(QWidget):
     def _bounce(self, pos):
         max_x = self.screen_width - self.width()
         max_y = self.screen_height - self.height()
+        bounce_factor = 0.6 if self.state == State.THROWN else 0.5
+        bounced = False
         if pos.x() < 0:
             pos.setX(0)
-            self.vel.setX(abs(self.vel.x()) * 0.5)
+            self.vel.setX(abs(self.vel.x()) * bounce_factor)
             self.target_dir.setX(abs(self.target_dir.x()))
+            bounced = True
         elif pos.x() > max_x:
             pos.setX(max_x)
-            self.vel.setX(-abs(self.vel.x()) * 0.5)
+            self.vel.setX(-abs(self.vel.x()) * bounce_factor)
             self.target_dir.setX(-abs(self.target_dir.x()))
+            bounced = True
         if pos.y() < 0:
             pos.setY(0)
-            self.vel.setY(abs(self.vel.y()) * 0.5)
+            self.vel.setY(abs(self.vel.y()) * bounce_factor)
             self.target_dir.setY(abs(self.target_dir.y()))
+            bounced = True
         elif pos.y() > max_y:
             pos.setY(max_y)
-            self.vel.setY(-abs(self.vel.y()) * 0.5)
+            self.vel.setY(-abs(self.vel.y()) * bounce_factor)
             self.target_dir.setY(-abs(self.target_dir.y()))
+            bounced = True
+        if bounced and self.state == State.THROWN:
+            self._throw_bounces += 1
+            if self._throw_bounces <= 3:
+                center = self.frameGeometry().center()
+                self.controller.particles.emit_eat(center.x(), center.y())
         return pos
 
     def _nearest_snack_center(self):
@@ -284,12 +323,17 @@ class PetWidget(QWidget):
         if event.button() == Qt.LeftButton:
             self._dragging = True
             self._drag_offset = event.globalPos() - self.pos()
+            self._drag_positions = [(event.globalPos(), event.timestamp())]
 
     def mouseMoveEvent(self, event):
         if self._dragging and self._drag_offset is not None:
             new_pos = event.globalPos() - self._drag_offset
             self.move(new_pos)
             self.pos_f = QPointF(new_pos.x(), new_pos.y())
+            # Track last few positions for throw velocity
+            self._drag_positions.append((event.globalPos(), event.timestamp()))
+            if len(self._drag_positions) > 6:
+                self._drag_positions.pop(0)
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -297,5 +341,27 @@ class PetWidget(QWidget):
                 delta = (event.globalPos() - self.pos()) - self._drag_offset
                 if delta.manhattanLength() < 5:
                     self.controller.pet_kirby()
+                elif len(self._drag_positions) >= 2:
+                    # Calculate throw velocity from recent drag
+                    p1, t1 = self._drag_positions[0]
+                    p2, t2 = self._drag_positions[-1]
+                    dt = max(1, t2 - t1)
+                    vx = (p2.x() - p1.x()) / dt * 16.0
+                    vy = (p2.y() - p1.y()) / dt * 16.0
+                    speed = math.hypot(vx, vy)
+                    if speed > 2.0:
+                        # Cap throw speed
+                        max_throw = 18.0
+                        if speed > max_throw:
+                            ratio = max_throw / speed
+                            vx *= ratio
+                            vy *= ratio
+                        self.vel = QPointF(vx, vy)
+                        self.state = State.THROWN
+                        self._throw_bounces = 0
+                        self.controller.bubble.show_text(
+                            random.choice(["Wheee!", "Poyooo~!", "Waaaah!"]), 1500
+                        )
             self._dragging = False
             self._drag_offset = None
+            self._drag_positions = []
