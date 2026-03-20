@@ -6,7 +6,7 @@
 
 ![Kirby](images/Y3il.gif)
 
-**v2.0.0**
+**v2.3.0**
 
 [![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
 [![PyQt5](https://img.shields.io/badge/PyQt5-5.15+-41CD52?style=flat-square)](https://pypi.org/project/PyQt5/)
