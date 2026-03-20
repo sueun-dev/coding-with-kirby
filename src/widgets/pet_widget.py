@@ -5,6 +5,7 @@ from PyQt5.QtWidgets import QLabel, QWidget, QApplication
 from PyQt5.QtGui import QMovie
 from PyQt5.QtCore import Qt, QTimer, QPointF
 from utils.utils import resource_path
+from utils.macos_window import pin_window_above_mission_control
 
 
 class State(Enum):
@@ -75,6 +76,7 @@ class PetWidget(QWidget):
         self._pick_wander_direction()
         self._state_timer = random.randint(120, 360)  # 2-6 sec
         self.show()
+        pin_window_above_mission_control(self)
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._tick)

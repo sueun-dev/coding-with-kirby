@@ -3,6 +3,7 @@ import math
 from PyQt5.QtWidgets import QWidget
 from PyQt5.QtGui import QPainter, QColor, QFont
 from PyQt5.QtCore import Qt, QTimer, QPointF
+from utils.macos_window import pin_window_above_mission_control
 
 
 class Particle:
@@ -45,6 +46,7 @@ class ParticleOverlay(QWidget):
         self.timer.timeout.connect(self._tick)
         self.timer.start(16)
         self.show()
+        pin_window_above_mission_control(self)
 
     def emit_eat(self, x, y):
         chars = ["★", "✦", "✧", "⭐", "+XP"]

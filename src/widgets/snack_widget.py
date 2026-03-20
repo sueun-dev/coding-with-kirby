@@ -3,6 +3,7 @@ from PyQt5.QtWidgets import QLabel, QWidget, QApplication
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtCore import Qt
 from utils.utils import resource_path, FOODS
+from utils.macos_window import pin_window_above_mission_control
 
 
 class SnackWidget(QWidget):
@@ -35,3 +36,4 @@ class SnackWidget(QWidget):
         y = random.randint(margin, screen.height() - self.height() - margin)
         self.move(x, y)
         self.show()
+        pin_window_above_mission_control(self)

@@ -1,6 +1,7 @@
 from PyQt5.QtWidgets import QWidget
 from PyQt5.QtGui import QPainter, QColor, QFont, QPainterPath
 from PyQt5.QtCore import Qt, QTimer, QRectF
+from utils.macos_window import pin_window_above_mission_control
 
 
 class ThoughtBubble(QWidget):
@@ -27,6 +28,7 @@ class ThoughtBubble(QWidget):
         self._hide_timer.setSingleShot(True)
         self._hide_timer.timeout.connect(self.fade_out)
         self.show()
+        pin_window_above_mission_control(self)
 
     def show_text(self, text, duration_ms=3000):
         self._text = text
