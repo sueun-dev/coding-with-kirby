@@ -1,29 +1,44 @@
 import os
 import json
-from PyQt5.QtWidgets import QInputDialog, QSystemTrayIcon, QMenu, QAction
-from PyQt5.QtGui import QIcon
-from PyQt5.QtCore import QTimer
+import random
+from PyQt5.QtWidgets import QInputDialog, QSystemTrayIcon, QMenu, QAction, QWidgetAction, QLabel
+from PyQt5.QtGui import QIcon, QPixmap, QPainter, QColor, QFont, QImage
+from PyQt5.QtCore import QTimer, Qt, QSize
 from widgets.pet_widget import PetWidget
 from widgets.snack_widget import SnackWidget
-from widgets.transparent_snackbar import TransparentSnackBar
 from widgets.thought_bubble import ThoughtBubble
 from utils.utils import (
-    STATE_FILE, RANKING_FILE, ACHIEVEMENTS, FOODS, xp_for_level, resource_path,
+    STATE_FILE, RANKING_FILE, ACHIEVEMENTS, xp_for_level, resource_path,
 )
 from utils.particles import ParticleOverlay
 
 
+def _make_tray_icon(text, size=22):
+    """Create a small icon with text/emoji for the macOS menu bar."""
+    scale = 2  # retina
+    img = QImage(size * scale, size * scale, QImage.Format_ARGB32_Premultiplied)
+    img.fill(Qt.transparent)
+    img.setDevicePixelRatio(scale)
+    p = QPainter(img)
+    p.setRenderHint(QPainter.Antialiasing)
+    font = QFont("Apple Color Emoji", 14)
+    p.setFont(font)
+    p.drawText(0, 0, size, size, Qt.AlignCenter, text)
+    p.end()
+    return QIcon(QPixmap.fromImage(img))
+
+
 class MainController:
     """
-    Central game controller managing Kirby's state, food, mood,
-    leveling, achievements, particles, and persistence.
+    Central game controller. All UI lives in the macOS menu bar tray icon.
     """
 
     HUNGER_TICK_MS = 1000
     HUNGER_RATE = 1
     AUTO_SAVE_MS = 30_000
     MOOD_TICK_MS = 2000
-    SLEEP_THRESHOLD_S = 60  # seconds idle before sleeping
+    SLEEP_THRESHOLD_S = 60
+    TRAY_REFRESH_MS = 1000
 
     def __init__(self, app):
         self.app = app
@@ -43,15 +58,12 @@ class MainController:
         self.snacks = []
         self._idle_seconds = 0
 
-        # Widgets
+        # Widgets (no snack bar — everything in tray)
         self.particles = ParticleOverlay()
         self.pet = PetWidget(self)
         self.bubble = ThoughtBubble()
-        self.snack_bar = TransparentSnackBar(self)
 
         self._load_state()
-
-        # System tray
         self._setup_tray()
 
         # Timers
@@ -71,9 +83,121 @@ class MainController:
         self._bubble_timer.timeout.connect(self._update_bubble_pos)
         self._bubble_timer.start(16)
 
+        self._tray_refresh = QTimer()
+        self._tray_refresh.timeout.connect(self._refresh_tray)
+        self._tray_refresh.start(self.TRAY_REFRESH_MS)
+
     @property
     def xp_for_next_level(self):
         return xp_for_level(self.level)
+
+    # --- Tray (macOS menu bar) ---
+
+    def _setup_tray(self):
+        self.tray = QSystemTrayIcon(self.app)
+        self.tray.setIcon(_make_tray_icon("🩷"))
+        self._build_tray_menu()
+        self.tray.activated.connect(self._on_tray_click)
+        self.tray.show()
+
+    def _build_tray_menu(self):
+        menu = QMenu()
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: #2a2a3e;
+                color: white;
+                border: 1px solid #444;
+                border-radius: 8px;
+                padding: 4px;
+            }
+            QMenu::item {
+                padding: 6px 20px;
+                border-radius: 4px;
+            }
+            QMenu::item:selected {
+                background-color: #4a4a6e;
+            }
+            QMenu::separator {
+                height: 1px;
+                background: #444;
+                margin: 4px 8px;
+            }
+        """)
+
+        mood_emoji = {"happy": "😊", "hungry": "😫", "sleeping": "💤", "excited": "🤩"}.get(self.mood, "😊")
+
+        # Header info (non-clickable)
+        header = QAction(f"  {mood_emoji} {self.username}'s Kirby", menu)
+        header.setEnabled(False)
+        menu.addAction(header)
+
+        menu.addSeparator()
+
+        # Stats display
+        stats_items = [
+            f"  Lv. {self.level}   XP: {self.xp}/{self.xp_for_next_level}",
+            f"  Hunger: {self.hunger}%",
+            f"  Size: {round(self.pet.scale_factor * 100, 1)}%",
+            f"  Foods Eaten: {self.total_eats}",
+            f"  Times Petted: {self.total_pets}",
+        ]
+        for s in stats_items:
+            a = QAction(s, menu)
+            a.setEnabled(False)
+            menu.addAction(a)
+
+        menu.addSeparator()
+
+        # Achievements summary
+        total_ach = len(ACHIEVEMENTS)
+        unlocked = len(self.unlocked_achievements)
+        ach_action = QAction(f"  🏆 Achievements: {unlocked}/{total_ach}", menu)
+        ach_action.triggered.connect(self._show_achievements)
+        menu.addAction(ach_action)
+
+        menu.addSeparator()
+
+        # Actions
+        feed_action = QAction("  🍕 Feed Kirby", menu)
+        feed_action.triggered.connect(self.spawn_snack)
+        menu.addAction(feed_action)
+
+        pet_action = QAction("  💕 Pet Kirby", menu)
+        pet_action.triggered.connect(self.pet_kirby)
+        menu.addAction(pet_action)
+
+        ranking_action = QAction("  📊 Ranking Board", menu)
+        ranking_action.triggered.connect(self._show_ranking)
+        menu.addAction(ranking_action)
+
+        menu.addSeparator()
+
+        quit_action = QAction("  ❌ Quit", menu)
+        quit_action.triggered.connect(self.app.quit)
+        menu.addAction(quit_action)
+
+        self.tray.setContextMenu(menu)
+
+    def _refresh_tray(self):
+        mood_emoji = {"happy": "😊", "hungry": "😫", "sleeping": "💤", "excited": "🤩"}.get(self.mood, "😊")
+        self.tray.setToolTip(f"Kirby Lv.{self.level} | {mood_emoji} | Hunger: {self.hunger}%")
+        # Rebuild menu to update live stats
+        self._build_tray_menu()
+
+    def _on_tray_click(self, reason):
+        if reason == QSystemTrayIcon.Trigger:
+            # Left-click: spawn food
+            self.spawn_snack()
+
+    def _show_ranking(self):
+        from dialogs.ranking_board import RankingBoard
+        board = RankingBoard()
+        board.exec_()
+
+    def _show_achievements(self):
+        from dialogs.stats_dialog import StatsDialog
+        dialog = StatsDialog(self)
+        dialog.exec_()
 
     # --- Food ---
 
@@ -99,11 +223,9 @@ class MainController:
         if snack.food_name == "Star Candy":
             self.star_eats += 1
 
-        # Particles
         center = snack.frameGeometry().center()
         self.particles.emit_eat(center.x(), center.y())
 
-        # Thought bubble
         thoughts = [
             f"Yum! {snack.food_name}!",
             "Delicious~",
@@ -111,13 +233,11 @@ class MainController:
             "More food!",
             "Poyo~!",
         ]
-        import random
         self.bubble.show_text(random.choice(thoughts), 2000)
 
         self._remove_snack(snack)
         self._reset_idle()
         self._check_achievements()
-        self.snack_bar.update()
 
     # --- XP / Level ---
 
@@ -129,12 +249,10 @@ class MainController:
             self._on_level_up()
 
     def _on_level_up(self):
-        # Grow Kirby
         growth = 0.02 / (1 + (self.level - 1) * 0.05)
         self.pet.scale_factor += growth
         self.pet.apply_scale()
 
-        # Particles + bubble
         center = self.pet.frameGeometry().center()
         self.particles.emit_level_up(center.x(), center.y())
         self.bubble.show_text(f"Level {self.level}!", 3000)
@@ -144,9 +262,6 @@ class MainController:
     def _hunger_tick(self):
         if self.hunger < 100:
             self.hunger = min(100, self.hunger + self.HUNGER_RATE)
-        self.snack_bar.update()
-
-        # Auto-spawn food when very hungry
         if self.hunger >= 90 and not self.snacks:
             self.spawn_snack()
 
@@ -170,12 +285,9 @@ class MainController:
         else:
             self.mood = "happy"
 
-        # Occasional sleep Z particles
         if self.mood == "sleeping":
             center = self.pet.frameGeometry().center()
             self.particles.emit_sleep(center.x(), center.y() - 30)
-
-        self.snack_bar.update()
 
     def _reset_idle(self):
         self._idle_seconds = 0
@@ -190,7 +302,6 @@ class MainController:
         center = self.pet.frameGeometry().center()
         self.particles.emit_heart(center.x(), center.y() - 20)
 
-        import random
         reactions = ["Poyo~!", "♥♥♥", "Hehe~", "That tickles!", "More pets!"]
         self.bubble.show_text(random.choice(reactions), 2500)
         self._check_achievements()
@@ -224,35 +335,6 @@ class MainController:
         pos = self.pet.pos()
         self.bubble.follow(pos.x(), pos.y())
 
-    # --- System Tray ---
-
-    def _setup_tray(self):
-        icon_path = resource_path("images/Y3il.gif")
-        self.tray = QSystemTrayIcon(QIcon(icon_path), self.app)
-
-        menu = QMenu()
-        feed_action = QAction("Feed Kirby", menu)
-        feed_action.triggered.connect(self.spawn_snack)
-        menu.addAction(feed_action)
-
-        stats_action = QAction("Stats", menu)
-        stats_action.triggered.connect(self._show_stats_from_tray)
-        menu.addAction(stats_action)
-
-        menu.addSeparator()
-        quit_action = QAction("Quit", menu)
-        quit_action.triggered.connect(self.app.quit)
-        menu.addAction(quit_action)
-
-        self.tray.setContextMenu(menu)
-        self.tray.setToolTip(f"Kirby — Lv.{self.level}")
-        self.tray.show()
-
-    def _show_stats_from_tray(self):
-        from dialogs.stats_dialog import StatsDialog
-        dialog = StatsDialog(self, None)
-        dialog.exec_()
-
     # --- Persistence ---
 
     def _load_state(self):
@@ -284,7 +366,6 @@ class MainController:
         with open(STATE_FILE, "w") as f:
             json.dump(state, f, indent=2)
         self._update_ranking()
-        self.tray.setToolTip(f"Kirby — Lv.{self.level}")
 
     def _update_ranking(self):
         ranking = []

@@ -1,23 +1,31 @@
 import random
 import math
+from enum import Enum, auto
 from PyQt5.QtWidgets import QLabel, QWidget, QApplication
 from PyQt5.QtGui import QMovie
 from PyQt5.QtCore import Qt, QTimer, QPointF
 from utils.utils import resource_path
 
 
+class State(Enum):
+    WANDERING = auto()
+    IDLE = auto()
+    CHASING = auto()
+    RESTING = auto()
+
+
 class PetWidget(QWidget):
     """
-    Kirby widget with smooth floating-point movement, mood-aware behavior,
-    drag-and-drop support, and petting interaction.
+    Kirby with state-machine movement: wander, pause, rest, chase food.
+    Uses velocity with acceleration for smooth, natural motion.
     """
 
-    MOVE_FPS = 60
-    BASE_SPEED = 3.0
-    HUNGRY_SPEED = 4.5
-    WANDER_TURN_CHANCE = 0.04
-    IDLE_PAUSE_CHANCE = 0.005
-    IDLE_RESUME_CHANCE = 0.03
+    FPS = 60
+    MAX_SPEED = 2.2
+    CHASE_MAX_SPEED = 4.0
+    ACCELERATION = 0.08
+    FRICTION = 0.96
+    TURN_SMOOTHING = 0.06
 
     def __init__(self, controller):
         super().__init__()
@@ -25,7 +33,17 @@ class PetWidget(QWidget):
         self.scale_factor = 1.0
         self._dragging = False
         self._drag_offset = None
-        self._idle = False
+
+        # Physics
+        self.pos_f = QPointF(0, 0)
+        self.vel = QPointF(0, 0)
+        self.target_dir = QPointF(1, 0)
+        self.is_facing_right = True
+
+        # State machine
+        self.state = State.WANDERING
+        self._state_timer = 0  # frames remaining in current state
+
         self._init_ui()
 
     def _init_ui(self):
@@ -54,59 +72,193 @@ class PetWidget(QWidget):
         self.move(init_x, init_y)
         self.pos_f = QPointF(init_x, init_y)
 
-        angle = random.uniform(0, 2 * math.pi)
-        self.direction_f = QPointF(math.cos(angle), math.sin(angle))
-        self.is_facing_right = self.direction_f.x() >= 0
+        self._pick_wander_direction()
+        self._state_timer = random.randint(120, 360)  # 2-6 sec
         self.show()
 
         self.timer = QTimer(self)
-        self.timer.timeout.connect(self._move_step)
-        self.timer.start(1000 // self.MOVE_FPS)
+        self.timer.timeout.connect(self._tick)
+        self.timer.start(1000 // self.FPS)
 
-    def _move_step(self):
+    def _tick(self):
         if self._dragging:
             return
-
-        mood = self.controller.mood
-        speed = self.BASE_SPEED
-
-        # Sleeping: no movement
-        if mood == "sleeping":
+        if self.controller.mood == "sleeping":
+            # Slow to a stop
+            self.vel *= 0.92
+            self._apply_velocity()
             return
 
-        # Hungry: chase food fast
-        if mood == "hungry" and self.controller.snacks:
-            speed = self.HUNGRY_SPEED
-            target = self._nearest_snack_center()
-            if target:
-                self._steer_toward(target)
-        else:
-            # Random idle pausing
-            if not self._idle and random.random() < self.IDLE_PAUSE_CHANCE:
-                self._idle = True
-                return
-            if self._idle:
-                if random.random() < self.IDLE_RESUME_CHANCE:
-                    self._idle = False
-                return
+        self._state_timer -= 1
 
-            # Gentle wandering
-            if random.random() < self.WANDER_TURN_CHANCE:
-                delta_angle = random.gauss(0, 0.4)
-                cos_a = math.cos(delta_angle)
-                sin_a = math.sin(delta_angle)
-                dx = self.direction_f.x() * cos_a - self.direction_f.y() * sin_a
-                dy = self.direction_f.x() * sin_a + self.direction_f.y() * cos_a
-                norm = math.hypot(dx, dy)
-                if norm > 0:
-                    self.direction_f = QPointF(dx / norm, dy / norm)
-                    self._flip_direction()
+        # State transitions
+        if self.controller.mood == "hungry" and self.controller.snacks:
+            self.state = State.CHASING
+        elif self.state == State.CHASING and (not self.controller.snacks or self.controller.mood != "hungry"):
+            self._enter_wandering()
+        elif self._state_timer <= 0:
+            self._next_state()
 
-        new_pos = self.pos_f + self.direction_f * speed
+        # State behavior
+        if self.state == State.WANDERING:
+            self._do_wander()
+        elif self.state == State.IDLE:
+            self._do_idle()
+        elif self.state == State.RESTING:
+            self._do_rest()
+        elif self.state == State.CHASING:
+            self._do_chase()
+
+        self._apply_velocity()
+        self.controller.check_collision()
+
+    def _next_state(self):
+        if self.state == State.WANDERING:
+            # After wandering, either pause briefly or rest
+            roll = random.random()
+            if roll < 0.5:
+                self._enter_idle()
+            elif roll < 0.75:
+                self._enter_resting()
+            else:
+                # Pick new wander direction
+                self._enter_wandering()
+        elif self.state in (State.IDLE, State.RESTING):
+            self._enter_wandering()
+
+    def _enter_wandering(self):
+        self.state = State.WANDERING
+        self._pick_wander_direction()
+        self._state_timer = random.randint(150, 420)  # 2.5-7 sec
+
+    def _enter_idle(self):
+        self.state = State.IDLE
+        self._state_timer = random.randint(30, 120)  # 0.5-2 sec pause
+
+    def _enter_resting(self):
+        self.state = State.RESTING
+        self._state_timer = random.randint(90, 240)  # 1.5-4 sec
+
+    def _pick_wander_direction(self):
+        angle = random.uniform(0, 2 * math.pi)
+        self.target_dir = QPointF(math.cos(angle), math.sin(angle))
+
+    # --- State behaviors ---
+
+    def _do_wander(self):
+        # Occasionally nudge direction slightly for organic feel
+        if random.random() < 0.02:
+            nudge = random.gauss(0, 0.3)
+            cos_a, sin_a = math.cos(nudge), math.sin(nudge)
+            dx = self.target_dir.x() * cos_a - self.target_dir.y() * sin_a
+            dy = self.target_dir.x() * sin_a + self.target_dir.y() * cos_a
+            self.target_dir = QPointF(dx, dy)
+            self._normalize_target()
+
+        # Accelerate toward target direction
+        ax = self.target_dir.x() * self.ACCELERATION
+        ay = self.target_dir.y() * self.ACCELERATION
+        self.vel = QPointF(self.vel.x() + ax, self.vel.y() + ay)
+        self._clamp_speed(self.MAX_SPEED)
+        self._update_facing()
+
+    def _do_idle(self):
+        # Decelerate to a stop
+        self.vel *= self.FRICTION
+
+    def _do_rest(self):
+        # Almost stopped, gentle breathing-like micro-sway
+        self.vel *= 0.94
+        if random.random() < 0.03:
+            self.vel = QPointF(
+                self.vel.x() + random.gauss(0, 0.05),
+                self.vel.y() + random.gauss(0, 0.05),
+            )
+
+    def _do_chase(self):
+        target = self._nearest_snack_center()
+        if not target:
+            return
+        center = self.frameGeometry().center()
+        dx = target.x() - center.x()
+        dy = target.y() - center.y()
+        dist = math.hypot(dx, dy)
+        if dist < 1:
+            return
+
+        # Smooth steering toward food
+        desired = QPointF(dx / dist, dy / dist)
+        self.target_dir = QPointF(
+            self.target_dir.x() + (desired.x() - self.target_dir.x()) * 0.12,
+            self.target_dir.y() + (desired.y() - self.target_dir.y()) * 0.12,
+        )
+        self._normalize_target()
+
+        # Faster acceleration when chasing
+        chase_accel = self.ACCELERATION * 1.8
+        self.vel = QPointF(
+            self.vel.x() + self.target_dir.x() * chase_accel,
+            self.vel.y() + self.target_dir.y() * chase_accel,
+        )
+        self._clamp_speed(self.CHASE_MAX_SPEED)
+        self._update_facing()
+
+    # --- Physics helpers ---
+
+    def _apply_velocity(self):
+        # Apply friction
+        self.vel = QPointF(self.vel.x() * self.FRICTION, self.vel.y() * self.FRICTION)
+
+        new_pos = QPointF(self.pos_f.x() + self.vel.x(), self.pos_f.y() + self.vel.y())
         new_pos = self._bounce(new_pos)
         self.pos_f = new_pos
         self.move(int(new_pos.x()), int(new_pos.y()))
-        self.controller.check_collision()
+
+    def _clamp_speed(self, max_spd):
+        speed = math.hypot(self.vel.x(), self.vel.y())
+        if speed > max_spd:
+            ratio = max_spd / speed
+            self.vel = QPointF(self.vel.x() * ratio, self.vel.y() * ratio)
+
+    def _normalize_target(self):
+        mag = math.hypot(self.target_dir.x(), self.target_dir.y())
+        if mag > 0:
+            self.target_dir = QPointF(self.target_dir.x() / mag, self.target_dir.y() / mag)
+
+    def _update_facing(self):
+        # Only flip when velocity is clearly horizontal
+        speed = math.hypot(self.vel.x(), self.vel.y())
+        if speed < 0.3:
+            return
+        facing_right = self.vel.x() >= 0
+        if facing_right != self.is_facing_right:
+            self.is_facing_right = facing_right
+            new_movie = self.right_movie if facing_right else self.left_movie
+            self.current_movie.stop()
+            self.current_movie = new_movie
+            self.label.setMovie(self.current_movie)
+            self.current_movie.start()
+
+    def _bounce(self, pos):
+        max_x = self.screen_width - self.width()
+        max_y = self.screen_height - self.height()
+        if pos.x() < 0:
+            pos.setX(0)
+            self.vel.setX(abs(self.vel.x()) * 0.5)
+            self.target_dir.setX(abs(self.target_dir.x()))
+        elif pos.x() > max_x:
+            pos.setX(max_x)
+            self.vel.setX(-abs(self.vel.x()) * 0.5)
+            self.target_dir.setX(-abs(self.target_dir.x()))
+        if pos.y() < 0:
+            pos.setY(0)
+            self.vel.setY(abs(self.vel.y()) * 0.5)
+            self.target_dir.setY(abs(self.target_dir.y()))
+        elif pos.y() > max_y:
+            pos.setY(max_y)
+            self.vel.setY(-abs(self.vel.y()) * 0.5)
+            self.target_dir.setY(-abs(self.target_dir.y()))
+        return pos
 
     def _nearest_snack_center(self):
         if not self.controller.snacks:
@@ -117,45 +269,6 @@ class PetWidget(QWidget):
             key=lambda s: (center - s.frameGeometry().center()).manhattanLength(),
         )
         return nearest.frameGeometry().center()
-
-    def _steer_toward(self, target):
-        center = self.frameGeometry().center()
-        dx = target.x() - center.x()
-        dy = target.y() - center.y()
-        mag = math.hypot(dx, dy)
-        if mag > 0:
-            self.direction_f = QPointF(dx / mag, dy / mag)
-            self._flip_direction()
-
-    def _bounce(self, pos):
-        max_x = self.screen_width - self.width()
-        max_y = self.screen_height - self.height()
-        if pos.x() < 0:
-            pos.setX(0)
-            self.direction_f.setX(abs(self.direction_f.x()))
-            self._flip_direction()
-        elif pos.x() > max_x:
-            pos.setX(max_x)
-            self.direction_f.setX(-abs(self.direction_f.x()))
-            self._flip_direction()
-        if pos.y() < 0:
-            pos.setY(0)
-            self.direction_f.setY(abs(self.direction_f.y()))
-        elif pos.y() > max_y:
-            pos.setY(max_y)
-            self.direction_f.setY(-abs(self.direction_f.y()))
-        return pos
-
-    def _flip_direction(self):
-        facing_right = self.direction_f.x() >= 0
-        if facing_right == self.is_facing_right:
-            return
-        self.is_facing_right = facing_right
-        new_movie = self.right_movie if facing_right else self.left_movie
-        self.current_movie.stop()
-        self.current_movie = new_movie
-        self.label.setMovie(self.current_movie)
-        self.current_movie.start()
 
     def apply_scale(self):
         w = int(self.original_size.width() * self.scale_factor)
@@ -181,7 +294,6 @@ class PetWidget(QWidget):
             if self._dragging and self._drag_offset is not None:
                 delta = (event.globalPos() - self.pos()) - self._drag_offset
                 if delta.manhattanLength() < 5:
-                    # It was a click, not a drag -> pet Kirby
                     self.controller.pet_kirby()
             self._dragging = False
             self._drag_offset = None
