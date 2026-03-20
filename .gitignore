@@ -40,7 +40,6 @@ pip-wheel-metadata/
 .uv/
 
 # PyInstaller
-*.spec.bak
 .pyinstaller/
 
 # ===== IDE / Editor =====

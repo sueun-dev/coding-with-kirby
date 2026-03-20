@@ -134,9 +134,9 @@ coding-with-kirby/
 │       ├── particles.py           # Full-screen particle overlay (6 presets)
 │       └── macos_window.py        # Cocoa window pinning for Mission Control
 ├── tests/
-│   ├── test_utils.py              # Constants, validators, JSON I/O (33 tests)
+│   ├── test_utils.py              # Constants, validators, JSON I/O (38 tests)
 │   ├── test_game_logic.py         # XP, hunger, mood, achievements (40 tests)
-│   ├── test_physics.py            # Velocity, bounce, throw, friction (29 tests)
+│   ├── test_physics.py            # Velocity, bounce, throw, friction (24 tests)
 │   └── test_bugfixes.py           # Regression tests for past bugs (33 tests)
 ├── images/
 │   ├── Y3il.gif                   # Kirby walking right

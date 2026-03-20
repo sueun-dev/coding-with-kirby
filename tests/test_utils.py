@@ -1,11 +1,10 @@
-"""
-Tests for utils.utils — constants, helpers, and persistence functions.
-"""
+"""Tests for utils.utils — constants, helpers, and persistence functions."""
+
+from __future__ import annotations
+
 import json
 import os
 import tempfile
-
-import pytest
 
 from utils.utils import (
     __version__,

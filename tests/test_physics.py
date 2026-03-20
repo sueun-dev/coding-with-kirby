@@ -1,7 +1,9 @@
-"""
-Tests for pet physics — velocity, bouncing, clamping, throw mechanics.
-"""
+"""Tests for pet physics — velocity, bouncing, clamping, throw mechanics."""
+
+from __future__ import annotations
+
 import math
+
 import pytest
 
 from utils.utils import (
