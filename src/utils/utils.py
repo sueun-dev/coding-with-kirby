@@ -1,9 +1,12 @@
 """
 Shared constants, configuration, and utility functions for the Kirby desktop pet.
 """
-import sys
-import os
+import json
 import logging
+import os
+import sys
+
+__version__ = "2.1.0"
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +57,12 @@ BREED_COOLDOWN_FRAMES = 60
 POOP_CLEAN_XP = 5
 BREED_XP = 30
 STAR_FIND_XP = 10
+MAX_HUNGER = 100
+HUNGER_AUTO_FEED_THRESHOLD = 90
+HUNGER_STARVING_THRESHOLD = 95
+MAX_POOPS = 20
+MAX_SNACKS = 10
+MAX_PARTICLES = 500
 
 # --- Physics constants ---
 PARTICLE_GRAVITY = 0.08
@@ -85,11 +94,19 @@ PET_FLIP_SPEED_THRESHOLD = 0.3
 PET_THROW_STOP_SPEED = 0.5
 PET_MAX_THROW_SPEED = 18.0
 PET_MIN_THROW_SPEED = 2.0
+PET_WANDER_NUDGE_CHANCE = 0.02
+PET_REST_SWAY_CHANCE = 0.03
+PET_CHASE_ACCEL_MULTIPLIER = 1.8
+PET_CHASE_STEERING = 0.12
+PET_BOUNCE_FACTOR_NORMAL = 0.5
+PET_BOUNCE_FACTOR_THROWN = 0.6
+PET_MAX_THROW_BOUNCES = 3
 
 # Baby overrides
 BABY_MAX_SPEED = 3.0
 BABY_CHASE_MAX_SPEED = 5.0
 BABY_ACCELERATION = 0.12
+BABY_SCALE = 0.5
 
 # State timers (frames)
 WANDER_DURATION = (150, 420)
@@ -104,6 +121,9 @@ SNACK_SPAWN_MARGIN = 60
 RANKING_WINDOW_SIZE = (420, 500)
 RANKING_REFRESH_MS = 5000
 RANKING_ROW_HEIGHT = 44
+
+# --- Username ---
+MAX_USERNAME_LENGTH = 20
 
 
 def xp_for_level(level):
@@ -122,6 +142,24 @@ def is_achievement_met(ach, *, total_eats=0, level=0, total_pets=0, star_eats=0)
     if ach.get("star_req", 0) > 0 and star_eats < ach["star_req"]:
         return False
     return True
+
+
+def validate_state(state):
+    """Validate and sanitize loaded game state. Returns cleaned dict."""
+    if not isinstance(state, dict):
+        return {}
+    cleaned = {}
+    cleaned["hunger"] = max(0, min(MAX_HUNGER, int(state.get("hunger", 0))))
+    cleaned["xp"] = max(0, int(state.get("xp", 0)))
+    cleaned["level"] = max(1, int(state.get("level", 1)))
+    cleaned["total_eats"] = max(0, int(state.get("total_eats", 0)))
+    cleaned["total_pets"] = max(0, int(state.get("total_pets", 0)))
+    cleaned["star_eats"] = max(0, int(state.get("star_eats", 0)))
+    cleaned["scale_factor"] = max(0.1, min(10.0, float(state.get("scale_factor", 1.0))))
+    achievements = state.get("achievements", [])
+    valid_ids = {a["id"] for a in ACHIEVEMENTS}
+    cleaned["achievements"] = [a for a in achievements if a in valid_ids]
+    return cleaned
 
 
 def resource_path(relative_path):
@@ -147,20 +185,25 @@ def load_json_safe(filepath, default=None):
         return default
     try:
         with open(filepath, "r") as f:
-            return __import__("json").load(f)
+            return json.load(f)
     except (json.JSONDecodeError, OSError, ValueError) as exc:
         logger.error("Failed to load %s: %s", filepath, exc)
         return default
 
 
 def save_json_safe(filepath, data):
-    """Write JSON file with error handling."""
+    """Write JSON file atomically with error handling and backup."""
+    tmp_path = filepath + ".tmp"
     try:
-        with open(filepath, "w") as f:
-            __import__("json").dump(data, f, indent=2)
+        with open(tmp_path, "w") as f:
+            json.dump(data, f, indent=2)
+        # Atomic rename
+        os.replace(tmp_path, filepath)
     except OSError as exc:
         logger.error("Failed to save %s: %s", filepath, exc)
-
-
-# Fix the import used inside load_json_safe / save_json_safe
-import json  # noqa: E402 — needed for JSONDecodeError reference
+        # Clean up temp file if it exists
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass

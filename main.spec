@@ -3,10 +3,10 @@
 
 a = Analysis(
     ['src/main.py'],
-    pathex=[],
+    pathex=['src'],
     binaries=[],
     datas=[('images', 'images')],
-    hiddenimports=[],
+    hiddenimports=['Cocoa', 'objc', 'psutil'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -22,7 +22,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='main',
+    name='CodingWithKirby',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -38,7 +38,7 @@ exe = EXE(
 )
 app = BUNDLE(
     exe,
-    name='main.app',
+    name='Coding with Kirby.app',
     icon=None,
-    bundle_identifier=None,
+    bundle_identifier='com.sueun.coding-with-kirby',
 )

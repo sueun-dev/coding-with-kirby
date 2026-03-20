@@ -1,8 +1,6 @@
 """
 Ranking board dialog with auto-refresh.
 """
-import os
-import json
 import logging
 
 from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QScrollArea, QWidget

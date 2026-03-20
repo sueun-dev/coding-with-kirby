@@ -1,11 +1,33 @@
-__pycache__
-*.py[c0]
-*.pyo
+# macOS
+.DS_Store
 
-kirby_state.json
-ranking.json
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+*.egg
+dist/
+build/
+*.spec.bak
+
+# PyInstaller
+.pyinstaller/
+
+# IDE
 *.swp
 *.sublime-workspace
 *.sublime-project
 *.sublime-metadata
 *.sublime-session
+.vscode/
+.idea/
+
+# Game state (user-specific)
+kirby_state.json
+ranking.json
+
+# Tests
+.pytest_cache/
+htmlcov/
+.coverage

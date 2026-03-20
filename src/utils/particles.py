@@ -9,7 +9,7 @@ from PyQt5.QtGui import QPainter, QColor, QFont
 from PyQt5.QtCore import Qt, QTimer, QPointF
 
 from utils.macos_window import pin_window_above_mission_control
-from utils.utils import PARTICLE_GRAVITY, PARTICLE_DECAY_RANGE, PARTICLE_TICK_MS
+from utils.utils import PARTICLE_GRAVITY, PARTICLE_DECAY_RANGE, PARTICLE_TICK_MS, MAX_PARTICLES
 
 
 class Particle:
@@ -93,9 +93,15 @@ class ParticleOverlay(QWidget):
 
     # --- Public emitters ---
 
+    def _can_emit(self, count=1):
+        """Check if we can add more particles without exceeding the cap."""
+        return len(self._particles) + count <= MAX_PARTICLES
+
     def emit_preset(self, name, x, y):
         """Emit particles from a named preset."""
         preset = self._PRESETS[name]
+        if not self._can_emit(preset["count"]):
+            return
         for _ in range(preset["count"]):
             char = random.choice(preset["chars"])
             if preset["colors"] is None:

@@ -1,13 +1,29 @@
+"""
+Coding with Kirby — a desktop pet that lives on your screen while you code.
+"""
 import sys
+import logging
+
 from PyQt5.QtWidgets import QApplication
 from core.main_controller import MainController
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%H:%M:%S",
+)
 
 
 def main():
     app = QApplication(sys.argv)
-    app.setQuitOnLastWindowClosed(False)  # Keep running with tray icon
+    app.setQuitOnLastWindowClosed(False)
     controller = MainController(app)
-    app.aboutToQuit.connect(controller.save_state)
+
+    def on_quit():
+        controller.stop_all_timers()
+        controller.save_state()
+
+    app.aboutToQuit.connect(on_quit)
     sys.exit(app.exec_())
 
 
