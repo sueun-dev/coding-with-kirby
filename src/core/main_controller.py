@@ -69,7 +69,9 @@ class MainController:
         # Widgets (no snack bar — everything in tray)
         self.particles = ParticleOverlay()
         self.pet = PetWidget(self)
+        self.extra_pets = []  # baby kirbys from breeding
         self.bubble = ThoughtBubble()
+        self._breed_cooldown = 0  # frames until next breed allowed
 
         self._load_state()
         self._setup_tray()
@@ -104,6 +106,11 @@ class MainController:
         self._cpu_timer = QTimer()
         self._cpu_timer.timeout.connect(self._cpu_tick)
         self._cpu_timer.start(self.CPU_TICK_MS)
+
+        # Breed check timer
+        self._breed_timer = QTimer()
+        self._breed_timer.timeout.connect(self._check_breeding)
+        self._breed_timer.start(500)  # check every 500ms
 
         # Time-based greeting on start
         self._time_greeting()
@@ -155,13 +162,17 @@ class MainController:
         menu.addSeparator()
 
         # Stats display
+        baby_count = len(self.extra_pets)
         stats_items = [
             f"  Lv. {self.level}   XP: {self.xp}/{self.xp_for_next_level}",
             f"  Hunger: {self.hunger}%",
             f"  Size: {round(self.pet.scale_factor * 100, 1)}%",
             f"  Foods Eaten: {self.total_eats}",
             f"  Times Petted: {self.total_pets}",
+            f"  Babies: {baby_count}" if baby_count > 0 else None,
+            f"  CPU: {self._cpu_percent:.0f}%",
         ]
+        stats_items = [s for s in stats_items if s is not None]
         for s in stats_items:
             a = QAction(s, menu)
             a.setEnabled(False)
@@ -236,6 +247,13 @@ class MainController:
         for snack in self.snacks[:]:
             if pet_rect.intersects(snack.frameGeometry()):
                 self._eat(snack)
+        # Extra pets also eat
+        for baby in self.extra_pets[:]:
+            baby_rect = baby.frameGeometry()
+            for snack in self.snacks[:]:
+                if baby_rect.intersects(snack.frameGeometry()):
+                    self._eat(snack)
+                    break
 
     def _eat(self, snack):
         self.hunger = max(0, self.hunger - snack.hunger_restore)
@@ -454,6 +472,63 @@ class MainController:
         else:
             msg = "So late... still coding?"
         QTimer.singleShot(2000, lambda: self.bubble.show_text(msg, 4000))
+
+    # --- Breeding ---
+
+    def _check_breeding(self):
+        if self._breed_cooldown > 0:
+            self._breed_cooldown -= 1
+            return
+
+        all_pets = [self.pet] + self.extra_pets
+        if len(all_pets) < 2:
+            return
+        # Max 6 kirbys total
+        if len(all_pets) >= 6:
+            return
+
+        import math
+        for i in range(len(all_pets)):
+            for j in range(i + 1, len(all_pets)):
+                a = all_pets[i]
+                b = all_pets[j]
+                ac = a.frameGeometry().center()
+                bc = b.frameGeometry().center()
+                dist = math.hypot(ac.x() - bc.x(), ac.y() - bc.y())
+                if dist < 50:
+                    self._breed(a, b)
+                    return
+
+    def _breed(self, parent_a, parent_b):
+        self._breed_cooldown = 60  # 30 seconds cooldown (60 * 500ms)
+
+        # Spawn baby between the two parents
+        mid_x = (parent_a.pos().x() + parent_b.pos().x()) / 2
+        mid_y = (parent_a.pos().y() + parent_b.pos().y()) / 2
+
+        # Heart explosion
+        for _ in range(12):
+            self.particles.emit_heart(
+                int(mid_x) + random.randint(-20, 20),
+                int(mid_y) + random.randint(-20, 20),
+            )
+
+        self.bubble.show_text(
+            random.choice(["A baby Kirby!", "New friend!", "Poyo poyo~!", "Family grows!"]),
+            4000,
+        )
+
+        # Create baby kirby (smaller scale)
+        baby = PetWidget(self, is_baby=True)
+        baby.scale_factor = 0.5
+        baby.apply_scale()
+        baby.move(int(mid_x), int(mid_y))
+        baby.pos_f = QPointF(mid_x, mid_y)
+        # Give baby a little bounce away
+        baby.vel = QPointF(random.uniform(-3, 3), -4)
+        self.extra_pets.append(baby)
+
+        self._add_xp(30)
 
     # --- Bubble follow ---
 

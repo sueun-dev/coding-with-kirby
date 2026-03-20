@@ -31,10 +31,11 @@ class PetWidget(QWidget):
     THROW_FRICTION = 0.985
     THROW_GRAVITY = 0.15
 
-    def __init__(self, controller):
+    def __init__(self, controller, is_baby=False):
         super().__init__()
         self.controller = controller
-        self.scale_factor = 1.0
+        self.is_baby = is_baby
+        self.scale_factor = 0.5 if is_baby else 1.0
         self._dragging = False
         self._drag_offset = None
         self._drag_positions = []  # for throw velocity calculation
@@ -73,6 +74,12 @@ class PetWidget(QWidget):
         self.resize(self.current_movie.frameRect().size())
         self.original_size = self.current_movie.frameRect().size()
 
+        # Babies are faster and more energetic
+        if self.is_baby:
+            self.MAX_SPEED = 3.0
+            self.CHASE_MAX_SPEED = 5.0
+            self.ACCELERATION = 0.12
+
         init_x = random.randint(100, self.screen_width - self.width() - 100)
         init_y = random.randint(100, self.screen_height - self.height() - 100)
         self.move(init_x, init_y)
@@ -82,6 +89,9 @@ class PetWidget(QWidget):
         self._state_timer = random.randint(120, 360)  # 2-6 sec
         self.show()
         pin_window_above_mission_control(self)
+
+        if self.is_baby:
+            self.apply_scale()
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._tick)
@@ -107,9 +117,11 @@ class PetWidget(QWidget):
         self._state_timer -= 1
 
         # State transitions
-        if self.controller.mood == "hungry" and self.controller.snacks:
+        has_food = bool(self.controller.snacks)
+        should_chase = (self.controller.mood == "hungry" and has_food) if not self.is_baby else has_food
+        if should_chase:
             self.state = State.CHASING
-        elif self.state == State.CHASING and (not self.controller.snacks or self.controller.mood != "hungry"):
+        elif self.state == State.CHASING and not should_chase:
             self._enter_wandering()
         elif self._state_timer <= 0:
             self._next_state()
