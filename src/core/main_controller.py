@@ -139,6 +139,12 @@ class MainController:
         """Stop all timers cleanly. Called on quit."""
         for timer in self._timers:
             timer.stop()
+        # Stop widget-owned timers
+        self.particles.stop()
+        self.bubble.stop()
+        self.pet.stop()
+        for baby in self.extra_pets:
+            baby.stop()
 
     # --- Tray (macOS menu bar) ---
 
@@ -304,10 +310,16 @@ class MainController:
 
     def _add_xp(self, amount):
         self.xp += amount
-        while self.xp >= self.xp_for_next_level:
-            self.xp -= self.xp_for_next_level
+        max_levelups = 50  # safety guard against infinite loop
+        count = 0
+        while self.xp >= self.xp_for_next_level and count < max_levelups:
+            needed = self.xp_for_next_level
+            if needed <= 0:
+                break
+            self.xp -= needed
             self.level += 1
             self._on_level_up()
+            count += 1
 
     def _on_level_up(self):
         growth = 0.02 / (1 + (self.level - 1) * 0.05)
@@ -506,10 +518,15 @@ class MainController:
                     return
 
     def _breed(self, parent_a, parent_b):
+        # Re-check limit (guard against concurrent breeding)
+        if len([self.pet] + self.extra_pets) >= MAX_KIRBYS:
+            return
         self._breed_cooldown = BREED_COOLDOWN_FRAMES
 
-        mid_x = (parent_a.pos().x() + parent_b.pos().x()) / 2
-        mid_y = (parent_a.pos().y() + parent_b.pos().y()) / 2
+        from PyQt5.QtWidgets import QApplication
+        screen = QApplication.primaryScreen().geometry()
+        mid_x = max(0, min(screen.width() - 50, (parent_a.pos().x() + parent_b.pos().x()) / 2))
+        mid_y = max(0, min(screen.height() - 50, (parent_a.pos().y() + parent_b.pos().y()) / 2))
 
         for _ in range(12):
             self.particles.emit_heart(

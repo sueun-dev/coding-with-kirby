@@ -32,8 +32,10 @@ class SnackWidget(QWidget):
         self.resize(self.label.size())
 
         screen = QApplication.primaryScreen().geometry()
-        x = random.randint(SNACK_SPAWN_MARGIN, screen.width() - self.width() - SNACK_SPAWN_MARGIN)
-        y = random.randint(SNACK_SPAWN_MARGIN, screen.height() - self.height() - SNACK_SPAWN_MARGIN)
+        max_x = screen.width() - self.width() - SNACK_SPAWN_MARGIN
+        max_y = screen.height() - self.height() - SNACK_SPAWN_MARGIN
+        x = random.randint(SNACK_SPAWN_MARGIN, max(SNACK_SPAWN_MARGIN, max_x))
+        y = random.randint(SNACK_SPAWN_MARGIN, max(SNACK_SPAWN_MARGIN, max_y))
         self.move(x, y)
         self.show()
         pin_window_above_mission_control(self)

@@ -42,6 +42,11 @@ class ThoughtBubble(QWidget):
         self.show()
         pin_window_above_mission_control(self)
 
+    def stop(self):
+        """Stop all timers for clean shutdown."""
+        self._timer.stop()
+        self._hide_timer.stop()
+
     def show_text(self, text, duration_ms=3000):
         self._text = text
         self._target_opacity = 1.0

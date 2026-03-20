@@ -32,7 +32,7 @@ class Particle:
         self.pos += self.vel
         self.vel.setY(self.vel.y() + PARTICLE_GRAVITY)
         self.life -= self.decay
-        return self.life > 0
+        return self.life > 0.001
 
 
 class ParticleOverlay(QWidget):
@@ -128,6 +128,8 @@ class ParticleOverlay(QWidget):
         self.emit_preset("level_up", x, y)
 
     def emit_sleep(self, x, y):
+        if not self._can_emit(1):
+            return
         color = QColor(150, 180, 255, 200)
         p = Particle(x, y, "Z", color, random.randint(16, 24))
         p.vel = QPointF(random.uniform(-0.5, 0.5), -1.5)
@@ -135,6 +137,8 @@ class ParticleOverlay(QWidget):
         self._particles.append(p)
 
     def emit_sweat(self, x, y):
+        if not self._can_emit(3):
+            return
         sweat_offset = 10
         for _ in range(3):
             color = QColor(100, 180, 255, 220)
@@ -148,11 +152,17 @@ class ParticleOverlay(QWidget):
             self._particles.append(p)
 
     def emit_poop(self, x, y):
+        if not self._can_emit(1):
+            return
         color = QColor(139, 90, 43)
         p = Particle(x, y, "💩", color, 18)
         p.vel = QPointF(0, -1.5)
         p.decay = 0.015
         self._particles.append(p)
+
+    def stop(self):
+        """Stop the particle timer for clean shutdown."""
+        self._timer.stop()
 
     # --- Internal ---
 

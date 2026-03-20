@@ -102,6 +102,10 @@ class PetWidget(QWidget):
         self._tick_timer.timeout.connect(self._tick)
         self._tick_timer.start(1000 // PET_FPS)
 
+    def stop(self):
+        """Stop the tick timer for clean shutdown."""
+        self._tick_timer.stop()
+
     # --- Main tick ---
 
     def _tick(self):

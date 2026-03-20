@@ -3,10 +3,11 @@ Shared constants, configuration, and utility functions for the Kirby desktop pet
 """
 import json
 import logging
+import math
 import os
 import sys
 
-__version__ = "2.1.0"
+__version__ = "2.2.0"
 
 logger = logging.getLogger(__name__)
 
@@ -155,7 +156,13 @@ def validate_state(state):
     cleaned["total_eats"] = max(0, int(state.get("total_eats", 0)))
     cleaned["total_pets"] = max(0, int(state.get("total_pets", 0)))
     cleaned["star_eats"] = max(0, int(state.get("star_eats", 0)))
-    cleaned["scale_factor"] = max(0.1, min(10.0, float(state.get("scale_factor", 1.0))))
+    try:
+        sf = float(state.get("scale_factor", 1.0))
+        if not math.isfinite(sf):
+            sf = 1.0
+    except (TypeError, ValueError):
+        sf = 1.0
+    cleaned["scale_factor"] = max(0.1, min(10.0, sf))
     achievements = state.get("achievements", [])
     valid_ids = {a["id"] for a in ACHIEVEMENTS}
     cleaned["achievements"] = [a for a in achievements if a in valid_ids]
