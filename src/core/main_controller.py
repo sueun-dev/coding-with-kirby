@@ -24,7 +24,9 @@ from utils.utils import (
     EATS_UNTIL_POOP, POOP_SPAWN_CHANCE, RANDOM_EVENT_CHANCE,
     CPU_HIGH_THRESHOLD, MAX_KIRBYS, BREEDING_DISTANCE,
     BREED_COOLDOWN_FRAMES, POOP_CLEAN_XP, BREED_XP, STAR_FIND_XP,
-    MAX_HUNGER, HUNGER_AUTO_FEED_THRESHOLD, HUNGER_STARVING_THRESHOLD,
+    MAX_HUNGER, HUNGER_SLEEP_THRESHOLD, HUNGER_HUNGRY_THRESHOLD,
+    HUNGER_EXCITED_THRESHOLD, HUNGER_AUTO_FEED_THRESHOLD,
+    HUNGER_STARVING_THRESHOLD,
     MAX_POOPS, MAX_SNACKS, BABY_SCALE, MAX_USERNAME_LENGTH,
     PET_GROWTH_BASE, PET_GROWTH_DIMINISH,
     HUNGER_TICK_MS, HUNGER_RATE, AUTO_SAVE_MS, MOOD_TICK_MS,
@@ -346,16 +348,16 @@ class MainController:
     def _mood_tick(self):
         self._idle_seconds += MOOD_TICK_MS / 1000
 
-        if self._idle_seconds >= SLEEP_THRESHOLD_S and self.hunger < 60:
+        if self._idle_seconds >= SLEEP_THRESHOLD_S and self.hunger < HUNGER_SLEEP_THRESHOLD:
             if self.mood != "sleeping":
                 self.mood = "sleeping"
                 self.bubble.show_text("Zzz...", 5000)
                 self._emit_sleep_particles()
-        elif self.hunger >= 80:
+        elif self.hunger >= HUNGER_HUNGRY_THRESHOLD:
             self.mood = "hungry"
             if self.hunger >= HUNGER_STARVING_THRESHOLD:
                 self.bubble.show_text("I'm starving...", 3000)
-        elif self.total_eats > 0 and self.hunger < 30:
+        elif self.total_eats > 0 and self.hunger < HUNGER_EXCITED_THRESHOLD:
             self.mood = "excited"
         else:
             self.mood = "happy"

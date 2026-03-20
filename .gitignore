@@ -1,34 +1,104 @@
-# macOS
+# ===== macOS =====
 .DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+Icon?
 
-# Python
+# ===== Python =====
 __pycache__/
 *.py[cod]
+*$py.class
 *.pyo
 *.egg-info/
 *.egg
+*.whl
+*.pyz
+*.pyzw
+MANIFEST
+*.manifest
+*.spec.bak
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+.python-version
+
+# Distribution / packaging
 dist/
 build/
-*.spec.bak
-.venv/
+eggs/
+sdist/
+wheels/
+pip-wheel-metadata/
+
+# uv
+.uv/
 
 # PyInstaller
+*.spec.bak
 .pyinstaller/
 
-# IDE
+# ===== IDE / Editor =====
+# VSCode
+.vscode/
+
+# JetBrains (PyCharm, IntelliJ)
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# Sublime Text
 *.swp
 *.sublime-workspace
 *.sublime-project
 *.sublime-metadata
 *.sublime-session
-.vscode/
-.idea/
 
-# Game state (user-specific)
-kirby_state.json
-ranking.json
+# Vim
+*.swp
+*.swo
+*~
+.netrwhist
+tags
 
-# Tests
+# Emacs
+\#*\#
+.#*
+
+# ===== Testing =====
 .pytest_cache/
 htmlcov/
 .coverage
+.coverage.*
+coverage.xml
+*.cover
+.hypothesis/
+.tox/
+.nox/
+
+# ===== Logging =====
+*.log
+pip-log.txt
+pip-delete-this-directory.txt
+
+# ===== Game state (user-specific) =====
+kirby_state.json
+ranking.json
+src/kirby_state.json
+src/ranking.json
+
+# ===== Misc =====
+*.bak
+*.tmp
+*.temp
+*.orig
+.env
+.env.local
+Thumbs.db

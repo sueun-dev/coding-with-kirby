@@ -20,6 +20,7 @@ from utils.utils import (
     PET_WANDER_NUDGE_CHANCE, PET_REST_SWAY_CHANCE,
     PET_CHASE_STEERING, PET_CHASE_ACCEL_MULTIPLIER,
     PET_SLEEP_FRICTION, PET_REST_FRICTION, PET_INIT_MARGIN,
+    PET_MAX_THROW_BOUNCES,
     BABY_MAX_SPEED, BABY_CHASE_MAX_SPEED, BABY_ACCELERATION,
     WANDER_DURATION, IDLE_DURATION, REST_DURATION, INIT_WANDER_DURATION,
 )
@@ -324,7 +325,7 @@ class PetWidget(QWidget):
 
         if bounced and self.state == State.THROWN:
             self._throw_bounces += 1
-            if self._throw_bounces <= 3:
+            if self._throw_bounces <= PET_MAX_THROW_BOUNCES:
                 center = self.frameGeometry().center()
                 self.controller.particles.emit_eat(center.x(), center.y())
         return pos

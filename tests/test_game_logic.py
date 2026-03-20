@@ -12,6 +12,8 @@ from utils.utils import (
     MAX_HUNGER, MAX_SNACKS, MAX_POOPS, MAX_KIRBYS,
     EATS_UNTIL_POOP, POOP_SPAWN_CHANCE,
     HUNGER_RATE, HUNGER_AUTO_FEED_THRESHOLD,
+    HUNGER_SLEEP_THRESHOLD, HUNGER_HUNGRY_THRESHOLD,
+    HUNGER_EXCITED_THRESHOLD,
     BREED_COOLDOWN_FRAMES, BREEDING_DISTANCE,
     POOP_CLEAN_XP, BREED_XP, STAR_FIND_XP,
     SLEEP_THRESHOLD_S,
@@ -150,24 +152,24 @@ class TestMood:
     def test_sleeping_after_idle(self):
         ctrl = FakeController()
         ctrl._idle_seconds = SLEEP_THRESHOLD_S + 1
-        ctrl.hunger = 30  # below 60
+        ctrl.hunger = HUNGER_SLEEP_THRESHOLD - 1
         # Simulate mood tick logic
-        if ctrl._idle_seconds >= SLEEP_THRESHOLD_S and ctrl.hunger < 60:
+        if ctrl._idle_seconds >= SLEEP_THRESHOLD_S and ctrl.hunger < HUNGER_SLEEP_THRESHOLD:
             ctrl.mood = "sleeping"
         assert ctrl.mood == "sleeping"
 
     def test_hungry_mood(self):
         ctrl = FakeController()
-        ctrl.hunger = 85
-        if ctrl.hunger >= 80:
+        ctrl.hunger = HUNGER_HUNGRY_THRESHOLD + 5
+        if ctrl.hunger >= HUNGER_HUNGRY_THRESHOLD:
             ctrl.mood = "hungry"
         assert ctrl.mood == "hungry"
 
     def test_excited_mood(self):
         ctrl = FakeController()
         ctrl.total_eats = 5
-        ctrl.hunger = 10
-        if ctrl.total_eats > 0 and ctrl.hunger < 30:
+        ctrl.hunger = HUNGER_EXCITED_THRESHOLD - 1
+        if ctrl.total_eats > 0 and ctrl.hunger < HUNGER_EXCITED_THRESHOLD:
             ctrl.mood = "excited"
         assert ctrl.mood == "excited"
 
