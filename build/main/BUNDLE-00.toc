@@ -1,3 +1,0 @@
-([('main',
-   '/Users/sueuncho/Documents/codecraft/big_kirby/dist/main',
-   'EXECUTABLE')],)
