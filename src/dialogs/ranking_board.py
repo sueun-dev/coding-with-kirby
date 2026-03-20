@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-import logging
-
 from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QScrollArea, QWidget
 from PyQt5.QtGui import QFont, QColor, QPainter, QLinearGradient
 from PyQt5.QtCore import Qt, QTimer, QRectF
 
-from utils.utils import RANKING_FILE, RANKING_WINDOW_SIZE, RANKING_REFRESH_MS, RANKING_ROW_HEIGHT, load_json_safe
-
-logger = logging.getLogger(__name__)
+from utils.utils import (
+    RANKING_FILE, RANKING_WINDOW_SIZE, RANKING_REFRESH_MS,
+    RANKING_ROW_HEIGHT, load_json_safe,
+)
 
 
 class RankingBoard(QDialog):

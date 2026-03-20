@@ -1,9 +1,6 @@
-"""
-Tests for game logic — XP, leveling, hunger, mood, achievements, breeding limits.
-These tests mock PyQt5 widgets to test pure logic without a display.
-"""
-import pytest
-from unittest.mock import MagicMock, patch
+"""Tests for game logic — XP, leveling, hunger, mood, achievements, breeding limits."""
+
+from __future__ import annotations
 
 from utils.utils import (
     xp_for_level,
@@ -45,9 +42,15 @@ class FakeController:
 
     def add_xp(self, amount):
         self.xp += amount
-        while self.xp >= self.xp_for_next_level:
-            self.xp -= self.xp_for_next_level
+        max_levelups = 50  # mirror real _add_xp safety guard
+        count = 0
+        while self.xp >= self.xp_for_next_level and count < max_levelups:
+            needed = self.xp_for_next_level
+            if needed <= 0:
+                break
+            self.xp -= needed
             self.level += 1
+            count += 1
 
     def check_achievements(self):
         for ach in ACHIEVEMENTS:

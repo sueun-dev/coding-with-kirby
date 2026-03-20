@@ -417,10 +417,10 @@ class MainController:
 
     def clean_poop(self, poop):
         if poop in self.poops:
+            center = poop.frameGeometry().center()  # capture before close()
             poop.close()
             self.poops.remove(poop)
             self._add_xp(POOP_CLEAN_XP)
-            center = poop.frameGeometry().center()
             self.particles.emit_eat(center.x(), center.y())
             self.bubble.show_text(random.choice(["Thanks!", "Clean~!", "Sparkle!"]), 1500)
 

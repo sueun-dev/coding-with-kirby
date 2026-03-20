@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import math
 
-import pytest
-
 from utils.utils import (
     validate_state, xp_for_level,
     MAX_HUNGER, MAX_KIRBYS, MAX_PARTICLES, MAX_SNACKS, MAX_POOPS,
