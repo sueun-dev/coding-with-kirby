@@ -1,155 +1,157 @@
+<div align="center">
 
+# Coding with Kirby
 
-# **Big Kirby – Virtual Desktop Pet Game**
+### Your Desktop Companion for Late-Night Coding Sessions
 
-![Kirby](images/y3il.gif)
+![Kirby](images/Y3il.gif)
 
-**Big Kirby** is an interactive **desktop pet game** where Kirby moves around your screen, eats food, and levels up over time. As Kirby eats, he **grows in size** and **his level increases**. The game also features an **online ranking board**, so you can compete with friends across different computers!
+**v2.0.0**
 
----
-
-## **🎮 Features**
-- **🐾 Virtual Pet:** Kirby moves around your screen, interacting with food.
-- **🍕 Food System:** Click the top bar to spawn random foods. Kirby eats them automatically.
-- **🔼 Level-Up Mechanic:** Kirby grows larger each time he eats, but leveling up becomes harder at higher levels.
-- **📊 Online Ranking Board:** Compete with friends! Your Kirby’s size and level are shared globally.
-- **🎨 Cute Animations:** Smooth movement with GIF-based animations.
-- **🚀 macOS Application:** Package the game as a **standalone `.app`** for Mac users.
-- **💾 Persistent Progress:** Your Kirby's size and level are saved even after restarting.
+[![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
+[![PyQt5](https://img.shields.io/badge/PyQt5-5.15+-41CD52?style=flat-square)](https://pypi.org/project/PyQt5/)
+[![macOS](https://img.shields.io/badge/macOS-Supported-000000?style=flat-square&logo=apple&logoColor=white)](https://www.apple.com/macos/)
+[![License](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](LICENSE)
 
 ---
 
-# **📥 Installing the Repository**
+A physics-driven desktop pet that lives on your screen while you code.
+Feed him, throw him, watch him breed — Kirby does his thing while you do yours.
 
-### **1. Clone the Repository**
-```bash
-git clone https://github.com/your-username/big-kirby.git
-cd big-kirby
-```
+</div>
 
-### **2. Install Dependencies**
-Make sure you have **Python 3.9+** installed, then run:
+---
+
+## What is this?
+
+A virtual Kirby that roams your macOS desktop as a transparent overlay. He walks around, gets hungry, eats food, levels up, poops, reacts to your CPU load, and breeds when two Kirbys meet. Everything runs from the macOS menu bar.
+
+---
+
+## Features
+
+### Core
+- **Physics-based movement** — Velocity, acceleration, friction, wall bouncing
+- **State machine AI** — Wander, idle, rest, chase food, get thrown
+- **Hunger & mood system** — Happy, hungry, sleeping, excited
+- **XP & leveling** — Quadratic scaling, Kirby grows as he levels
+- **9 achievements** — First Bite, Glutton, Star Hunter, Pet Lover, etc.
+- **Persistent state** — Auto-saves every 30s, survives restarts
+- **Local ranking board** — Compete with friends on the same machine
+
+### Fun Stuff
+- **Drag & throw** — Fling Kirby across the screen with momentum physics. He bounces off walls with particle effects
+- **Breeding** — When two Kirbys get close, a baby Kirby is born (max 6). Babies are smaller, faster, and chase food independently
+- **Poop system** — Kirby poops after eating. Click to clean (+5 XP)
+- **Random events** — Trips, finds hidden stars, dances, sneezes, hiccups
+- **CPU monitor** — Kirby sweats and complains when CPU > 80%
+- **Time-aware greetings** — Different messages for morning, afternoon, evening, late night
+- **Colorful emoji food** — Apple, cake, burger, pizza, sushi, ice cream, star candy
+
+### Technical
+- **Mission Control compatible** — Kirby stays visible during F3 (uses NSWindow level 25 + Cocoa collection behaviors)
+- **Menu bar tray icon** — All controls live in the macOS menu bar
+- **Particle system** — Full-screen transparent overlay with eat, heart, sleep, level-up, sweat, and achievement effects
+- **Thought bubbles** — Kirby tells you what he's thinking
+
+---
+
+## Quick Start
+
 ```bash
+git clone https://github.com/sueun-dev/coding-with-kirby.git
+cd coding-with-kirby
 pip install -r requirements.txt
-```
-
-### **3. Run the Game**
-```bash
 python3 src/main.py
 ```
 
+### Dependencies
+
+```
+PyQt5
+pyobjc-framework-Cocoa
+psutil
+```
+
 ---
 
-# **🍏 Running the macOS App**
+## How It Works
 
-### **1. Install PyInstaller**
+| Action | What happens |
+|--------|-------------|
+| **Left-click tray icon** | Spawn food |
+| **Right-click tray icon** | Open menu (stats, feed, pet, ranking, quit) |
+| **Click Kirby** | Pet him (+hearts) |
+| **Drag & release Kirby** | Throw him (physics momentum) |
+| **Click poop** | Clean it (+5 XP) |
+| **Two Kirbys meet** | Baby Kirby spawns |
+| **Do nothing for 60s** | Kirby falls asleep |
+| **Hunger hits 90%** | Food auto-spawns |
+
+---
+
+## Architecture
+
+```
+src/
+├── main.py                          # Entry point
+├── core/
+│   └── main_controller.py           # Central game controller
+├── widgets/
+│   ├── pet_widget.py                # Kirby with state machine + physics
+│   ├── snack_widget.py              # Emoji food items
+│   ├── poop_widget.py               # Clickable poop
+│   ├── thought_bubble.py            # Floating text bubble
+│   └── transparent_snackbar.py      # Legacy status bar
+├── dialogs/
+│   ├── stats_dialog.py              # Achievements dialog
+│   └── ranking_board.py             # Leaderboard
+└── utils/
+    ├── utils.py                     # Constants, food defs, achievements
+    ├── particles.py                 # Full-screen particle overlay
+    └── macos_window.py              # Cocoa window pinning
+```
+
+---
+
+## Build macOS App
+
 ```bash
 pip install pyinstaller
-```
-
-### **2. Build the macOS App**
-Run the following command from the project root:
-```bash
 pyinstaller --windowed --onefile --add-data "images:images" src/main.py
 ```
-After the build completes, your **Big Kirby.app** will be inside the `dist/` folder.
 
-### **3. Running the macOS App**
-Double-click **Big Kirby.app** inside the `dist/` folder.
-
-> 🛑 **Note:** If macOS prevents the app from running due to security restrictions, go to **System Preferences → Security & Privacy → General** and allow the app.
+The `.app` will be in `dist/`. If macOS blocks it: **System Settings > Privacy & Security > Allow**.
 
 ---
 
-# **🎮 How to Play**
-### **1. Spawning Food**
-- Click the **top bar** to spawn food. Kirby will automatically move towards it.
-- Each food item reduces Kirby’s **hunger**.
+## Changelog
 
-### **2. Leveling Up**
-- Kirby **grows** every time he eats.
-- The **higher the level, the harder it is to level up**.
+### v2.0.0 (2026-03)
+- Complete rewrite with physics engine and state machine AI
+- Menu bar tray icon (removed floating status bar)
+- Drag & throw with momentum
+- Breeding system (baby Kirbys)
+- Poop system
+- Random events (trip, dance, sneeze, hiccup, find star)
+- CPU monitor with sweat particles
+- Time-based greetings
+- Emoji food (replaced black silhouette PNGs)
+- Mission Control compatibility
+- Achievement system (9 achievements)
+- Particle effects (eat, heart, sleep, level-up, sweat, achievement)
 
-### **3. Checking the Online Ranking**
-- Click **“Ranking”** on the top bar to see the **global leaderboard**.
-- Rankings **auto-refresh every 5 seconds**.
-
-### **4. Quitting the Game**
-- Click **“Quit”** on the top bar to exit the game.
-
----
-
-# **📂 Folder Structure**
-```
-big_kirby/
-├── src/
-│   ├── core/                 # Core game logic
-│   │   └── main_controller.py
-│   ├── dialogs/              # UI Dialogs
-│   │   └── ranking_board.py
-│   ├── utils/                # Utility functions
-│   │   └── utils.py
-│   └── widgets/              # UI Components
-│       ├── pet_widget.py
-│       ├── snack_widget.py
-│       └── transparent_snackbar.py
-│   └── main.py
-│
-├── images/                   # Image assets (GIFs & food images)
-│   ├── y3il.gif
-│   ├── y3il-reverse.gif
-│   ├── food_1.png
-│   ├── food_2.png
-│   ├── food_3.png
-│   ├── food_4.png
-│   ├── food_5.png
-│   ├── food_6.png
-│   ├── food_7.png
-│
-├── kirby_state.json           # Saves Kirby's state (auto-created)
-├── ranking.json               # Stores global ranking (auto-created)
-└── README.md                  # Project documentation
-```
+### v1.0.0 (2025)
+- Initial release with basic movement and food system
 
 ---
 
-# **🌎 Offline Ranking System**
-Your Kirby’s **size and level** are saved **online** and shared across multiple computers.
-(I don't have money to use server...)
+## Author
 
-### **How It Works**
-1. When you close the game, your stats are **uploaded** to a shared ranking file.
-2. Other players also upload their scores when they exit.
-3. When you check the **Ranking Board**, the latest **global** scores are displayed.
-
-> **Note:** For **true online play**, replace the local ranking system with a **real database or web API** (e.g., Firebase, Supabase, or a Flask/Django backend).
+**sueun-dev** — [GitHub](https://github.com/sueun-dev) · sueun.dev@gmail.com
 
 ---
 
-# **🚀 Contributing**
-Contributions are welcome! To contribute:
-1. Fork the repository.
-2. Create a feature branch (`git checkout -b feature-name`).
-3. Commit your changes (`git commit -m "Added new feature"`).
-4. Push to the branch (`git push origin feature-name`).
-5. Submit a **pull request**!
+## License
 
----
-
-# **📜 License**
-This project is licensed under the **MIT License**. Feel free to use and modify it!
-
----
-
-# **👨‍💻 Author**
-GitHub: [sueun-dev](https://github.com/sueun-dev)  
-Email: sueun.dev@gmail.com
-
----
-
-### **Final Notes**
-✅ **Clear distinction** between **installing the repository** and **running the macOS app**  
-✅ **Detailed installation steps** for both environments  
-✅ **Perfect formatting** with headers, code blocks, and structured sections  
-
-This is now the ideal **README.md** for your **Big Kirby** project! 🚀
+MIT
