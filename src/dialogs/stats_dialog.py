@@ -1,6 +1,7 @@
-"""
-Stats and achievements dialog.
-"""
+"""Stats and achievements dialog."""
+
+from __future__ import annotations
+
 from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel
 from PyQt5.QtGui import QFont
 from PyQt5.QtCore import Qt

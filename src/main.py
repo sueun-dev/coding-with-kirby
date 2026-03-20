@@ -1,8 +1,9 @@
-"""
-Coding with Kirby — a desktop pet that lives on your screen while you code.
-"""
-import sys
+"""Coding with Kirby — a desktop pet that lives on your screen while you code."""
+
+from __future__ import annotations
+
 import logging
+import sys
 
 from PyQt5.QtWidgets import QApplication
 from core.main_controller import MainController

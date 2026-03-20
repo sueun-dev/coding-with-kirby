@@ -1,48 +1,56 @@
+"""macOS-specific window helpers.
+
+Makes windows stay visible during Mission Control (F3), Spaces
+transitions, and full-screen apps by setting Cocoa window level and
+collection-behavior flags.
 """
-macOS-specific window helpers.
-Makes windows stay visible during Mission Control (F3),
-Spaces transitions, and full-screen apps.
-"""
-import sys
+
+from __future__ import annotations
+
 import ctypes
+import sys
+
+# kCGStatusWindowLevel — renders above Mission Control.
+_STATUS_WINDOW_LEVEL = 25
 
 
-def pin_window_above_mission_control(qt_widget):
-    """
-    Use Cocoa APIs to make *qt_widget* stick above Mission Control.
-    No-op on non-macOS platforms.
+def pin_window_above_mission_control(qt_widget: object) -> None:
+    """Pin *qt_widget* above Mission Control using Cocoa APIs.
+
+    Sets the underlying ``NSWindow`` level to ``kCGStatusWindowLevel``
+    and applies collection-behavior flags so the window persists across
+    Spaces and full-screen transitions.
+
+    No-op on non-macOS platforms or when ``pyobjc`` is unavailable.
+
+    Args:
+        qt_widget: Any ``QWidget`` instance.
     """
     if sys.platform != "darwin":
         return
 
     try:
-        from Cocoa import (
-            NSApplication,
+        from Cocoa import (  # type: ignore[import-untyped]
             NSWindowCollectionBehaviorCanJoinAllSpaces,
             NSWindowCollectionBehaviorStationary,
             NSWindowCollectionBehaviorFullScreenAuxiliary,
             NSWindowCollectionBehaviorIgnoresCycle,
         )
-        import objc
+        import objc  # type: ignore[import-untyped]
     except ImportError:
         return
 
-    # Force the widget to have a native window handle
-    qt_widget.winId()
+    # Force native window handle creation.
+    qt_widget.winId()  # type: ignore[attr-defined]
 
-    # Get all NSWindows and find the one matching our widget's geometry
-    app = NSApplication.sharedApplication()
-
-    # Use objc runtime to get NSView from the Qt winId
-    view_ptr = int(qt_widget.winId())
+    view_ptr = int(qt_widget.winId())  # type: ignore[attr-defined]
     ns_view = objc.objc_object(c_void_p=ctypes.c_void_p(view_ptr))
     ns_window = ns_view.window()
 
     if ns_window is None:
         return
 
-    # kCGStatusWindowLevel = 25 — above Mission Control
-    ns_window.setLevel_(25)
+    ns_window.setLevel_(_STATUS_WINDOW_LEVEL)
 
     behavior = (
         NSWindowCollectionBehaviorCanJoinAllSpaces

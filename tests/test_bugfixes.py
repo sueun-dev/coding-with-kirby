@@ -1,7 +1,9 @@
-"""
-Tests specifically verifying bug fixes from v2.2.0 audit.
-"""
+"""Tests verifying bug fixes and refactoring from v2.2.0+ audits."""
+
+from __future__ import annotations
+
 import math
+
 import pytest
 
 from utils.utils import (
@@ -9,6 +11,10 @@ from utils.utils import (
     MAX_HUNGER, MAX_KIRBYS, MAX_PARTICLES, MAX_SNACKS, MAX_POOPS,
     PET_FRICTION, PET_THROW_FRICTION, PET_THROW_GRAVITY,
     PET_THROW_STOP_SPEED, PET_BOUNCE_FACTOR_THROWN,
+    PET_BOUNCE_FACTOR_NORMAL, PET_SLEEP_FRICTION, PET_REST_FRICTION,
+    PET_WANDER_NUDGE_CHANCE, PET_REST_SWAY_CHANCE,
+    PET_CHASE_STEERING, PET_CHASE_ACCEL_MULTIPLIER,
+    PET_GROWTH_BASE, PET_GROWTH_DIMINISH, PET_INIT_MARGIN,
     SNACK_SPAWN_MARGIN, BREED_COOLDOWN_FRAMES,
 )
 
@@ -240,3 +246,41 @@ class TestValidateStateEdgeCases:
         assert "first_bite" in result["achievements"]
         assert None not in result["achievements"]
         assert 42 not in result["achievements"]
+
+
+# --- v2.3.0: Constants extracted from magic numbers ---
+
+class TestExtractedConstants:
+    """Verify that constants extracted during refactoring have sane values."""
+
+    def test_friction_constants_in_range(self):
+        assert 0.0 < PET_SLEEP_FRICTION < 1.0
+        assert 0.0 < PET_REST_FRICTION < 1.0
+        assert PET_REST_FRICTION > PET_SLEEP_FRICTION  # rest is less damped
+
+    def test_bounce_factors_in_range(self):
+        assert 0.0 < PET_BOUNCE_FACTOR_NORMAL < 1.0
+        assert 0.0 < PET_BOUNCE_FACTOR_THROWN < 1.0
+        assert PET_BOUNCE_FACTOR_THROWN > PET_BOUNCE_FACTOR_NORMAL
+
+    def test_chance_constants_in_range(self):
+        assert 0.0 < PET_WANDER_NUDGE_CHANCE < 1.0
+        assert 0.0 < PET_REST_SWAY_CHANCE < 1.0
+
+    def test_chase_constants_positive(self):
+        assert PET_CHASE_STEERING > 0
+        assert PET_CHASE_ACCEL_MULTIPLIER > 1.0
+
+    def test_growth_constants_positive(self):
+        assert PET_GROWTH_BASE > 0
+        assert PET_GROWTH_DIMINISH > 0
+
+    def test_growth_formula_diminishes(self):
+        """Growth should decrease as level increases."""
+        growth_1 = PET_GROWTH_BASE / (1 + 0 * PET_GROWTH_DIMINISH)
+        growth_50 = PET_GROWTH_BASE / (1 + 49 * PET_GROWTH_DIMINISH)
+        assert growth_50 < growth_1
+
+    def test_init_margin_reasonable(self):
+        assert PET_INIT_MARGIN > 0
+        assert PET_INIT_MARGIN < 500  # shouldn't be too large

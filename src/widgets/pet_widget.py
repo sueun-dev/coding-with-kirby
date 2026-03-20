@@ -1,6 +1,7 @@
-"""
-Kirby desktop pet widget with state-machine AI and velocity-based physics.
-"""
+"""Kirby desktop pet widget with state-machine AI and velocity-based physics."""
+
+from __future__ import annotations
+
 import math
 import random
 from enum import Enum, auto
@@ -15,6 +16,10 @@ from utils.utils import (
     PET_FRICTION, PET_THROW_FRICTION, PET_THROW_GRAVITY,
     PET_FLIP_SPEED_THRESHOLD, PET_THROW_STOP_SPEED,
     PET_MAX_THROW_SPEED, PET_MIN_THROW_SPEED,
+    PET_BOUNCE_FACTOR_NORMAL, PET_BOUNCE_FACTOR_THROWN,
+    PET_WANDER_NUDGE_CHANCE, PET_REST_SWAY_CHANCE,
+    PET_CHASE_STEERING, PET_CHASE_ACCEL_MULTIPLIER,
+    PET_SLEEP_FRICTION, PET_REST_FRICTION, PET_INIT_MARGIN,
     BABY_MAX_SPEED, BABY_CHASE_MAX_SPEED, BABY_ACCELERATION,
     WANDER_DURATION, IDLE_DURATION, REST_DURATION, INIT_WANDER_DURATION,
 )
@@ -22,6 +27,8 @@ from utils.macos_window import pin_window_above_mission_control
 
 
 class State(Enum):
+    """Pet behavior states for the finite state machine."""
+
     WANDERING = auto()
     IDLE = auto()
     CHASING = auto()
@@ -85,8 +92,9 @@ class PetWidget(QWidget):
         self.resize(self._current_movie.frameRect().size())
         self._original_size = self._current_movie.frameRect().size()
 
-        init_x = random.randint(100, self._screen_width - self.width() - 100)
-        init_y = random.randint(100, self._screen_height - self.height() - 100)
+        margin = PET_INIT_MARGIN
+        init_x = random.randint(margin, self._screen_width - self.width() - margin)
+        init_y = random.randint(margin, self._screen_height - self.height() - margin)
         self.move(init_x, init_y)
         self.pos_f = QPointF(init_x, init_y)
 
@@ -119,7 +127,7 @@ class PetWidget(QWidget):
             return
 
         if self.controller.mood == "sleeping":
-            self.vel *= 0.92
+            self.vel *= PET_SLEEP_FRICTION
             self._apply_velocity()
             return
 
@@ -187,7 +195,7 @@ class PetWidget(QWidget):
     # --- State behaviors ---
 
     def _do_wander(self):
-        if random.random() < 0.02:
+        if random.random() < PET_WANDER_NUDGE_CHANCE:
             nudge = random.gauss(0, 0.3)
             cos_a, sin_a = math.cos(nudge), math.sin(nudge)
             dx = self._target_dir.x() * cos_a - self._target_dir.y() * sin_a
@@ -205,8 +213,8 @@ class PetWidget(QWidget):
         self.vel *= PET_FRICTION
 
     def _do_rest(self):
-        self.vel *= 0.94
-        if random.random() < 0.03:
+        self.vel *= PET_REST_FRICTION
+        if random.random() < PET_REST_SWAY_CHANCE:
             self.vel = QPointF(
                 self.vel.x() + random.gauss(0, 0.05),
                 self.vel.y() + random.gauss(0, 0.05),
@@ -225,12 +233,12 @@ class PetWidget(QWidget):
 
         desired = QPointF(dx / dist, dy / dist)
         self._target_dir = QPointF(
-            self._target_dir.x() + (desired.x() - self._target_dir.x()) * 0.12,
-            self._target_dir.y() + (desired.y() - self._target_dir.y()) * 0.12,
+            self._target_dir.x() + (desired.x() - self._target_dir.x()) * PET_CHASE_STEERING,
+            self._target_dir.y() + (desired.y() - self._target_dir.y()) * PET_CHASE_STEERING,
         )
         self._normalize_target()
 
-        chase_accel = self._acceleration * 1.8
+        chase_accel = self._acceleration * PET_CHASE_ACCEL_MULTIPLIER
         self.vel = QPointF(
             self.vel.x() + self._target_dir.x() * chase_accel,
             self.vel.y() + self._target_dir.y() * chase_accel,
@@ -289,7 +297,10 @@ class PetWidget(QWidget):
     def _bounce(self, pos):
         max_x = self._screen_width - self.width()
         max_y = self._screen_height - self.height()
-        bounce_factor = 0.6 if self.state == State.THROWN else 0.5
+        bounce_factor = (
+            PET_BOUNCE_FACTOR_THROWN if self.state == State.THROWN
+            else PET_BOUNCE_FACTOR_NORMAL
+        )
         bounced = False
 
         for axis, limit_lo, limit_hi in [("x", 0, max_x), ("y", 0, max_y)]:

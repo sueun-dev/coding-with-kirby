@@ -1,6 +1,7 @@
-"""
-Ranking board dialog with auto-refresh.
-"""
+"""Ranking board dialog with auto-refresh."""
+
+from __future__ import annotations
+
 import logging
 
 from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QScrollArea, QWidget

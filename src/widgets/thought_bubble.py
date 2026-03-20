@@ -1,6 +1,7 @@
-"""
-Floating thought bubble that follows Kirby and shows text.
-"""
+"""Floating thought bubble that follows Kirby and shows text."""
+
+from __future__ import annotations
+
 from PyQt5.QtWidgets import QWidget, QApplication
 from PyQt5.QtGui import QPainter, QColor, QFont, QPainterPath
 from PyQt5.QtCore import Qt, QTimer, QRectF

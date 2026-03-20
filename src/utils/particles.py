@@ -1,6 +1,7 @@
-"""
-Full-screen transparent particle overlay for visual effects.
-"""
+"""Full-screen transparent particle overlay for visual effects."""
+
+from __future__ import annotations
+
 import math
 import random
 

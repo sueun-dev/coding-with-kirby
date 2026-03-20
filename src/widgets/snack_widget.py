@@ -1,6 +1,7 @@
-"""
-Food widget that spawns at a random screen position.
-"""
+"""Food widget that spawns at a random screen position."""
+
+from __future__ import annotations
+
 import random
 
 from PyQt5.QtWidgets import QLabel, QWidget, QApplication

@@ -1,10 +1,11 @@
-"""
-Central game controller. All UI lives in the macOS menu bar tray icon.
-"""
-import math
-import random
+"""Central game controller — all UI lives in the macOS menu-bar tray icon."""
+
+from __future__ import annotations
+
 import datetime
 import logging
+import math
+import random
 
 import psutil
 from PyQt5.QtWidgets import QInputDialog, QSystemTrayIcon, QMenu, QAction
@@ -25,6 +26,7 @@ from utils.utils import (
     BREED_COOLDOWN_FRAMES, POOP_CLEAN_XP, BREED_XP, STAR_FIND_XP,
     MAX_HUNGER, HUNGER_AUTO_FEED_THRESHOLD, HUNGER_STARVING_THRESHOLD,
     MAX_POOPS, MAX_SNACKS, BABY_SCALE, MAX_USERNAME_LENGTH,
+    PET_GROWTH_BASE, PET_GROWTH_DIMINISH,
     HUNGER_TICK_MS, HUNGER_RATE, AUTO_SAVE_MS, MOOD_TICK_MS,
     SLEEP_THRESHOLD_S, TRAY_REFRESH_MS, EVENT_TICK_MS,
     CPU_TICK_MS, BREED_CHECK_MS, BUBBLE_TICK_MS,
@@ -322,7 +324,7 @@ class MainController:
             count += 1
 
     def _on_level_up(self):
-        growth = 0.02 / (1 + (self.level - 1) * 0.05)
+        growth = PET_GROWTH_BASE / (1 + (self.level - 1) * PET_GROWTH_DIMINISH)
         self.pet.scale_factor += growth
         self.pet.apply_scale()
 

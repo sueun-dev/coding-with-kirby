@@ -1,13 +1,15 @@
-"""
-Shared constants, configuration, and utility functions for the Kirby desktop pet.
-"""
+"""Shared constants, configuration, and utility functions for the Kirby desktop pet."""
+
+from __future__ import annotations
+
 import json
 import logging
 import math
 import os
 import sys
+from typing import Any
 
-__version__ = "2.2.0"
+__version__ = "2.3.0"
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +104,12 @@ PET_CHASE_STEERING = 0.12
 PET_BOUNCE_FACTOR_NORMAL = 0.5
 PET_BOUNCE_FACTOR_THROWN = 0.6
 PET_MAX_THROW_BOUNCES = 3
+PET_SLEEP_FRICTION = 0.92
+PET_REST_FRICTION = 0.94
+
+# Growth formula: growth = base / (1 + (level - 1) * diminish)
+PET_GROWTH_BASE = 0.02
+PET_GROWTH_DIMINISH = 0.05
 
 # Baby overrides
 BABY_MAX_SPEED = 3.0
@@ -117,6 +125,7 @@ INIT_WANDER_DURATION = (120, 360)
 
 # --- Snack ---
 SNACK_SPAWN_MARGIN = 60
+PET_INIT_MARGIN = 100
 
 # --- Ranking board ---
 RANKING_WINDOW_SIZE = (420, 500)
@@ -127,13 +136,38 @@ RANKING_ROW_HEIGHT = 44
 MAX_USERNAME_LENGTH = 20
 
 
-def xp_for_level(level):
-    """XP required to reach the next level. Scales quadratically."""
+def xp_for_level(level: int) -> int:
+    """Return XP required to reach the next level.
+
+    Args:
+        level: The current level (0-based indexing supported).
+
+    Returns:
+        Positive integer XP threshold, scaling exponentially.
+    """
     return int(50 * (1.3 ** level))
 
 
-def is_achievement_met(ach, *, total_eats=0, level=0, total_pets=0, star_eats=0):
-    """Check if an achievement's requirements are satisfied."""
+def is_achievement_met(
+    ach: dict[str, Any],
+    *,
+    total_eats: int = 0,
+    level: int = 0,
+    total_pets: int = 0,
+    star_eats: int = 0,
+) -> bool:
+    """Check whether an achievement's requirements are satisfied.
+
+    Args:
+        ach: Achievement definition dict with optional ``*_req`` keys.
+        total_eats: Lifetime food count.
+        level: Current player level.
+        total_pets: Lifetime pet-interaction count.
+        star_eats: Lifetime Star Candy count.
+
+    Returns:
+        ``True`` if every requirement in *ach* is met.
+    """
     if ach.get("eats_req", 0) > 0 and total_eats < ach["eats_req"]:
         return False
     if ach.get("level_req", 0) > 0 and level < ach["level_req"]:
@@ -145,38 +179,61 @@ def is_achievement_met(ach, *, total_eats=0, level=0, total_pets=0, star_eats=0)
     return True
 
 
-def validate_state(state):
-    """Validate and sanitize loaded game state. Returns cleaned dict."""
+def validate_state(state: Any) -> dict[str, Any]:
+    """Validate and sanitize loaded game state.
+
+    Coerces types, clamps numeric ranges, filters invalid achievements,
+    and handles ``NaN`` / ``Inf`` scale factors gracefully.
+
+    Args:
+        state: Raw dict loaded from JSON (or any other value).
+
+    Returns:
+        Cleaned dict with guaranteed-valid fields, or ``{}`` if
+        *state* is not a dict.
+    """
     if not isinstance(state, dict):
         return {}
-    cleaned = {}
+
+    cleaned: dict[str, Any] = {}
     cleaned["hunger"] = max(0, min(MAX_HUNGER, int(state.get("hunger", 0))))
     cleaned["xp"] = max(0, int(state.get("xp", 0)))
     cleaned["level"] = max(1, int(state.get("level", 1)))
     cleaned["total_eats"] = max(0, int(state.get("total_eats", 0)))
     cleaned["total_pets"] = max(0, int(state.get("total_pets", 0)))
     cleaned["star_eats"] = max(0, int(state.get("star_eats", 0)))
+
     try:
-        sf = float(state.get("scale_factor", 1.0))
-        if not math.isfinite(sf):
-            sf = 1.0
+        scale = float(state.get("scale_factor", 1.0))
+        if not math.isfinite(scale):
+            scale = 1.0
     except (TypeError, ValueError):
-        sf = 1.0
-    cleaned["scale_factor"] = max(0.1, min(10.0, sf))
+        scale = 1.0
+    cleaned["scale_factor"] = max(0.1, min(10.0, scale))
+
     achievements = state.get("achievements", [])
     valid_ids = {a["id"] for a in ACHIEVEMENTS}
     cleaned["achievements"] = [a for a in achievements if a in valid_ids]
     return cleaned
 
 
-def resource_path(relative_path):
-    """Get absolute path to resource, works for dev and PyInstaller builds."""
-    base_path = getattr(sys, '_MEIPASS', None)
+def resource_path(relative_path: str) -> str:
+    """Return absolute path to a bundled resource.
+
+    Works for both development (source tree) and PyInstaller one-file
+    builds (``sys._MEIPASS``).
+
+    Args:
+        relative_path: Path relative to the project root (e.g.
+            ``"images/Y3il.gif"``).
+
+    Returns:
+        Absolute filesystem path. Logs a warning if the file does not exist.
+    """
+    base_path: str | None = getattr(sys, "_MEIPASS", None)
     if base_path is None:
         base_path = os.path.dirname(
-            os.path.dirname(
-                os.path.dirname(os.path.abspath(__file__))
-            )
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         )
     full_path = os.path.join(base_path, relative_path)
     if not os.path.exists(full_path):
@@ -184,31 +241,46 @@ def resource_path(relative_path):
     return full_path
 
 
-def load_json_safe(filepath, default=None):
-    """Load JSON file with error handling. Returns *default* on failure."""
+def load_json_safe(filepath: str, default: Any = None) -> Any:
+    """Load a JSON file with error handling.
+
+    Args:
+        filepath: Path to the JSON file.
+        default: Value returned when the file is missing or corrupt.
+            Defaults to ``{}``.
+
+    Returns:
+        Parsed JSON data, or *default* on any failure.
+    """
     if default is None:
         default = {}
     if not os.path.exists(filepath):
         return default
     try:
-        with open(filepath, "r") as f:
-            return json.load(f)
+        with open(filepath, "r", encoding="utf-8") as fh:
+            return json.load(fh)
     except (json.JSONDecodeError, OSError, ValueError) as exc:
         logger.error("Failed to load %s: %s", filepath, exc)
         return default
 
 
-def save_json_safe(filepath, data):
-    """Write JSON file atomically with error handling and backup."""
+def save_json_safe(filepath: str, data: Any) -> None:
+    """Write *data* to a JSON file atomically.
+
+    Writes to a temporary file first, then renames to avoid corruption
+    on crash. Cleans up the temp file on failure.
+
+    Args:
+        filepath: Destination JSON file path.
+        data: JSON-serializable data to persist.
+    """
     tmp_path = filepath + ".tmp"
     try:
-        with open(tmp_path, "w") as f:
-            json.dump(data, f, indent=2)
-        # Atomic rename
+        with open(tmp_path, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, indent=2)
         os.replace(tmp_path, filepath)
     except OSError as exc:
         logger.error("Failed to save %s: %s", filepath, exc)
-        # Clean up temp file if it exists
         if os.path.exists(tmp_path):
             try:
                 os.remove(tmp_path)
