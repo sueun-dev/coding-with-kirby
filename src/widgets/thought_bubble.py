@@ -1,7 +1,15 @@
-from PyQt5.QtWidgets import QWidget
+"""
+Floating thought bubble that follows Kirby and shows text.
+"""
+from PyQt5.QtWidgets import QWidget, QApplication
 from PyQt5.QtGui import QPainter, QColor, QFont, QPainterPath
 from PyQt5.QtCore import Qt, QTimer, QRectF
+
 from utils.macos_window import pin_window_above_mission_control
+from utils.utils import FADE_TICK_MS
+
+_OPACITY_THRESHOLD = 0.01
+_FADE_RATE = 0.15
 
 
 class ThoughtBubble(QWidget):
@@ -21,12 +29,16 @@ class ThoughtBubble(QWidget):
         self._text = ""
         self._opacity = 0.0
         self._target_opacity = 0.0
+
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._fade_tick)
-        self._timer.start(30)
+        self._timer.start(FADE_TICK_MS)
+
         self._hide_timer = QTimer(self)
         self._hide_timer.setSingleShot(True)
         self._hide_timer.timeout.connect(self.fade_out)
+
+        self._screen = QApplication.primaryScreen().geometry()
         self.show()
         pin_window_above_mission_control(self)
 
@@ -41,19 +53,22 @@ class ThoughtBubble(QWidget):
         self._target_opacity = 0.0
 
     def follow(self, x, y):
-        self.move(x - 20, y - 65)
+        """Follow Kirby, clamped to screen bounds."""
+        bx = max(0, min(x - 20, self._screen.width() - self.width()))
+        by = max(0, min(y - 65, self._screen.height() - self.height()))
+        self.move(int(bx), int(by))
 
     def _fade_tick(self):
         diff = self._target_opacity - self._opacity
-        if abs(diff) > 0.01:
-            self._opacity += diff * 0.15
+        if abs(diff) > _OPACITY_THRESHOLD:
+            self._opacity += diff * _FADE_RATE
             self.update()
         elif diff != 0:
             self._opacity = self._target_opacity
             self.update()
 
     def paintEvent(self, event):
-        if self._opacity < 0.01:
+        if self._opacity < _OPACITY_THRESHOLD:
             return
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)

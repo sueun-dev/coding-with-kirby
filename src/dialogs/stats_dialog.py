@@ -1,7 +1,11 @@
+"""
+Stats and achievements dialog.
+"""
 from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel
 from PyQt5.QtGui import QFont
 from PyQt5.QtCore import Qt
-from utils.utils import ACHIEVEMENTS
+
+from utils.utils import ACHIEVEMENTS, is_achievement_met
 
 
 class StatsDialog(QDialog):
@@ -17,23 +21,30 @@ class StatsDialog(QDialog):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(8)
 
-        c = controller
+        self._build_header(layout, controller)
+        self._build_stats(layout, controller)
+        self._build_achievements(layout, controller)
+        layout.addStretch()
 
-        title = QLabel(f"📊 {c.username}'s Kirby")
+    @staticmethod
+    def _build_header(layout, ctrl):
+        title = QLabel(f"📊 {ctrl.username}'s Kirby")
         title.setFont(QFont("Arial", 16, QFont.Bold))
         title.setAlignment(Qt.AlignCenter)
         title.setStyleSheet("color: #FFD700; margin-bottom: 12px;")
         layout.addWidget(title)
 
+    @staticmethod
+    def _build_stats(layout, ctrl):
         stats = [
-            f"Level: {c.level}",
-            f"XP: {c.xp} / {c.xp_for_next_level}",
-            f"Size: {round(c.pet.scale_factor * 100, 1)}%",
-            f"Total Foods Eaten: {c.total_eats}",
-            f"Star Candies Eaten: {c.star_eats}",
-            f"Times Petted: {c.total_pets}",
-            f"Hunger: {c.hunger}%",
-            f"Mood: {c.mood}",
+            f"Level: {ctrl.level}",
+            f"XP: {ctrl.xp} / {ctrl.xp_for_next_level}",
+            f"Size: {round(ctrl.pet.scale_factor * 100, 1)}%",
+            f"Total Foods Eaten: {ctrl.total_eats}",
+            f"Star Candies Eaten: {ctrl.star_eats}",
+            f"Times Petted: {ctrl.total_pets}",
+            f"Hunger: {ctrl.hunger}%",
+            f"Mood: {ctrl.mood}",
         ]
         for s in stats:
             lbl = QLabel(s)
@@ -41,31 +52,24 @@ class StatsDialog(QDialog):
             lbl.setStyleSheet("padding: 2px 0;")
             layout.addWidget(lbl)
 
-        # Achievements section
+    @staticmethod
+    def _build_achievements(layout, ctrl):
         ach_title = QLabel("🏆 Achievements")
         ach_title.setFont(QFont("Arial", 14, QFont.Bold))
         ach_title.setStyleSheet("color: #FFD700; margin-top: 16px; margin-bottom: 4px;")
         layout.addWidget(ach_title)
 
         for ach in ACHIEVEMENTS:
-            unlocked = self._check_unlocked(ach, c)
+            unlocked = is_achievement_met(
+                ach,
+                total_eats=ctrl.total_eats,
+                level=ctrl.level,
+                total_pets=ctrl.total_pets,
+                star_eats=ctrl.star_eats,
+            )
             icon = "✅" if unlocked else "🔒"
             color = "#90EE90" if unlocked else "#666"
             lbl = QLabel(f"{icon} {ach['name']} — {ach['desc']}")
             lbl.setFont(QFont("Arial", 10))
             lbl.setStyleSheet(f"color: {color}; padding: 1px 0;")
             layout.addWidget(lbl)
-
-        layout.addStretch()
-
-    @staticmethod
-    def _check_unlocked(ach, controller):
-        if ach.get("eats_req", 0) > 0 and controller.total_eats < ach["eats_req"]:
-            return False
-        if ach.get("level_req", 0) > 0 and controller.level < ach["level_req"]:
-            return False
-        if ach.get("pets_req", 0) > 0 and controller.total_pets < ach["pets_req"]:
-            return False
-        if ach.get("star_req", 0) > 0 and controller.star_eats < ach["star_req"]:
-            return False
-        return True

@@ -1,8 +1,13 @@
+"""
+Food widget that spawns at a random screen position.
+"""
 import random
+
 from PyQt5.QtWidgets import QLabel, QWidget, QApplication
 from PyQt5.QtGui import QFont
 from PyQt5.QtCore import Qt
-from utils.utils import FOODS
+
+from utils.utils import FOODS, SNACK_SPAWN_MARGIN
 from utils.macos_window import pin_window_above_mission_control
 
 
@@ -27,9 +32,8 @@ class SnackWidget(QWidget):
         self.resize(self.label.size())
 
         screen = QApplication.primaryScreen().geometry()
-        margin = 60
-        x = random.randint(margin, screen.width() - self.width() - margin)
-        y = random.randint(margin, screen.height() - self.height() - margin)
+        x = random.randint(SNACK_SPAWN_MARGIN, screen.width() - self.width() - SNACK_SPAWN_MARGIN)
+        y = random.randint(SNACK_SPAWN_MARGIN, screen.height() - self.height() - SNACK_SPAWN_MARGIN)
         self.move(x, y)
         self.show()
         pin_window_above_mission_control(self)

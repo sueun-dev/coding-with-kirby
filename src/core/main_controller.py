@@ -1,19 +1,36 @@
-import os
-import json
+"""
+Central game controller. All UI lives in the macOS menu bar tray icon.
+"""
+import math
 import random
 import datetime
+import logging
+
 import psutil
-from PyQt5.QtWidgets import QInputDialog, QSystemTrayIcon, QMenu, QAction, QWidgetAction, QLabel
-from PyQt5.QtGui import QIcon, QPixmap, QPainter, QColor, QFont, QImage
-from PyQt5.QtCore import QTimer, Qt, QSize, QPointF
+from PyQt5.QtWidgets import QInputDialog, QSystemTrayIcon, QMenu, QAction
+from PyQt5.QtGui import QIcon, QPixmap, QPainter, QFont, QImage
+from PyQt5.QtCore import QTimer, Qt, QPointF
+
 from widgets.pet_widget import PetWidget
 from widgets.snack_widget import SnackWidget
 from widgets.poop_widget import PoopWidget
 from widgets.thought_bubble import ThoughtBubble
 from utils.utils import (
-    STATE_FILE, RANKING_FILE, ACHIEVEMENTS, xp_for_level, resource_path,
+    STATE_FILE, RANKING_FILE, ACHIEVEMENTS, MOOD_EMOJIS,
+    xp_for_level, is_achievement_met, resource_path,
+    load_json_safe, save_json_safe,
+    # Gameplay constants
+    EATS_UNTIL_POOP, POOP_SPAWN_CHANCE, RANDOM_EVENT_CHANCE,
+    CPU_HIGH_THRESHOLD, MAX_KIRBYS, BREEDING_DISTANCE,
+    BREED_COOLDOWN_FRAMES, POOP_CLEAN_XP, BREED_XP, STAR_FIND_XP,
+    # Timer constants
+    HUNGER_TICK_MS, HUNGER_RATE, AUTO_SAVE_MS, MOOD_TICK_MS,
+    SLEEP_THRESHOLD_S, TRAY_REFRESH_MS, EVENT_TICK_MS,
+    CPU_TICK_MS, BREED_CHECK_MS, BUBBLE_TICK_MS,
 )
 from utils.particles import ParticleOverlay
+
+logger = logging.getLogger(__name__)
 
 
 def _make_tray_icon(text, size=22):
@@ -22,36 +39,48 @@ def _make_tray_icon(text, size=22):
     img = QImage(size * scale, size * scale, QImage.Format_ARGB32_Premultiplied)
     img.fill(Qt.transparent)
     img.setDevicePixelRatio(scale)
-    p = QPainter(img)
-    p.setRenderHint(QPainter.Antialiasing)
-    font = QFont("Apple Color Emoji", 14)
-    p.setFont(font)
-    p.drawText(0, 0, size, size, Qt.AlignCenter, text)
-    p.end()
+    painter = QPainter(img)
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.setFont(QFont("Apple Color Emoji", 14))
+    painter.drawText(0, 0, size, size, Qt.AlignCenter, text)
+    painter.end()
     return QIcon(QPixmap.fromImage(img))
+
+
+# --- Tray menu stylesheet (reused on every rebuild) ---
+_TRAY_MENU_STYLE = """
+    QMenu {
+        background-color: #2a2a3e;
+        color: white;
+        border: 1px solid #444;
+        border-radius: 8px;
+        padding: 4px;
+    }
+    QMenu::item {
+        padding: 6px 20px;
+        border-radius: 4px;
+    }
+    QMenu::item:selected {
+        background-color: #4a4a6e;
+    }
+    QMenu::separator {
+        height: 1px;
+        background: #444;
+        margin: 4px 8px;
+    }
+"""
 
 
 class MainController:
     """
-    Central game controller. All UI lives in the macOS menu bar tray icon.
+    Central game controller. Manages game state, UI tray, and all game systems.
     """
-
-    HUNGER_TICK_MS = 1000
-    HUNGER_RATE = 1
-    AUTO_SAVE_MS = 30_000
-    MOOD_TICK_MS = 2000
-    SLEEP_THRESHOLD_S = 60
-    TRAY_REFRESH_MS = 1000
-    EVENT_TICK_MS = 15_000  # random events every 15s
-    CPU_TICK_MS = 5000
 
     def __init__(self, app):
         self.app = app
+        self.username = self._ask_username()
 
-        username, ok = QInputDialog.getText(None, "Username", "Enter your username:")
-        self.username = username.strip() if ok and username.strip() else "Player"
-
-        # State
+        # Game state
         self.hunger = 0
         self.xp = 0
         self.level = 1
@@ -59,65 +88,50 @@ class MainController:
         self.total_pets = 0
         self.star_eats = 0
         self.mood = "happy"
-        self.unlocked_achievements = set()
-        self.snacks = []
-        self.poops = []
+        self.unlocked_achievements: set[str] = set()
+        self.snacks: list[SnackWidget] = []
+        self.poops: list[PoopWidget] = []
         self._idle_seconds = 0
         self._eats_since_poop = 0
         self._cpu_percent = 0.0
+        self._breed_cooldown = 0
 
-        # Widgets (no snack bar — everything in tray)
+        # Widgets
         self.particles = ParticleOverlay()
         self.pet = PetWidget(self)
-        self.extra_pets = []  # baby kirbys from breeding
+        self.extra_pets: list[PetWidget] = []
         self.bubble = ThoughtBubble()
-        self._breed_cooldown = 0  # frames until next breed allowed
 
         self._load_state()
         self._setup_tray()
-
-        # Timers
-        self._hunger_timer = QTimer()
-        self._hunger_timer.timeout.connect(self._hunger_tick)
-        self._hunger_timer.start(self.HUNGER_TICK_MS)
-
-        self._mood_timer = QTimer()
-        self._mood_timer.timeout.connect(self._mood_tick)
-        self._mood_timer.start(self.MOOD_TICK_MS)
-
-        self._autosave_timer = QTimer()
-        self._autosave_timer.timeout.connect(self.save_state)
-        self._autosave_timer.start(self.AUTO_SAVE_MS)
-
-        self._bubble_timer = QTimer()
-        self._bubble_timer.timeout.connect(self._update_bubble_pos)
-        self._bubble_timer.start(16)
-
-        self._tray_refresh = QTimer()
-        self._tray_refresh.timeout.connect(self._refresh_tray)
-        self._tray_refresh.start(self.TRAY_REFRESH_MS)
-
-        # Random events timer
-        self._event_timer = QTimer()
-        self._event_timer.timeout.connect(self._random_event)
-        self._event_timer.start(self.EVENT_TICK_MS)
-
-        # CPU monitor timer
-        self._cpu_timer = QTimer()
-        self._cpu_timer.timeout.connect(self._cpu_tick)
-        self._cpu_timer.start(self.CPU_TICK_MS)
-
-        # Breed check timer
-        self._breed_timer = QTimer()
-        self._breed_timer.timeout.connect(self._check_breeding)
-        self._breed_timer.start(500)  # check every 500ms
-
-        # Time-based greeting on start
+        self._init_timers()
         self._time_greeting()
 
-    @property
-    def xp_for_next_level(self):
-        return xp_for_level(self.level)
+    # --- Initialization helpers ---
+
+    @staticmethod
+    def _ask_username():
+        username, ok = QInputDialog.getText(None, "Username", "Enter your username:")
+        return username.strip() if ok and username.strip() else "Player"
+
+    def _init_timers(self):
+        """Create and start all game timers."""
+        timer_defs = [
+            (HUNGER_TICK_MS,  self._hunger_tick),
+            (MOOD_TICK_MS,    self._mood_tick),
+            (AUTO_SAVE_MS,    self.save_state),
+            (BUBBLE_TICK_MS,  self._update_bubble_pos),
+            (TRAY_REFRESH_MS, self._refresh_tray),
+            (EVENT_TICK_MS,   self._random_event),
+            (CPU_TICK_MS,     self._cpu_tick),
+            (BREED_CHECK_MS,  self._check_breeding),
+        ]
+        self._timers: list[QTimer] = []
+        for interval_ms, callback in timer_defs:
+            timer = QTimer()
+            timer.timeout.connect(callback)
+            timer.start(interval_ms)
+            self._timers.append(timer)
 
     # --- Tray (macOS menu bar) ---
 
@@ -130,112 +144,100 @@ class MainController:
 
     def _build_tray_menu(self):
         menu = QMenu()
-        menu.setStyleSheet("""
-            QMenu {
-                background-color: #2a2a3e;
-                color: white;
-                border: 1px solid #444;
-                border-radius: 8px;
-                padding: 4px;
-            }
-            QMenu::item {
-                padding: 6px 20px;
-                border-radius: 4px;
-            }
-            QMenu::item:selected {
-                background-color: #4a4a6e;
-            }
-            QMenu::separator {
-                height: 1px;
-                background: #444;
-                margin: 4px 8px;
-            }
-        """)
+        menu.setStyleSheet(_TRAY_MENU_STYLE)
 
-        mood_emoji = {"happy": "😊", "hungry": "😫", "sleeping": "💤", "excited": "🤩"}.get(self.mood, "😊")
+        mood_emoji = MOOD_EMOJIS.get(self.mood, "😊")
 
-        # Header info (non-clickable)
-        header = QAction(f"  {mood_emoji} {self.username}'s Kirby", menu)
-        header.setEnabled(False)
-        menu.addAction(header)
-
+        # Header (non-clickable)
+        self._add_info_action(menu, f"  {mood_emoji} {self.username}'s Kirby")
         menu.addSeparator()
 
-        # Stats display
+        # Stats
+        self._build_stats_section(menu)
+        menu.addSeparator()
+
+        # Achievements
+        self._build_achievements_action(menu)
+        menu.addSeparator()
+
+        # Actions
+        self._build_actions_section(menu)
+
+        self.tray.setContextMenu(menu)
+
+    def _build_stats_section(self, menu):
         baby_count = len(self.extra_pets)
-        stats_items = [
+        stats_lines = [
             f"  Lv. {self.level}   XP: {self.xp}/{self.xp_for_next_level}",
             f"  Hunger: {self.hunger}%",
             f"  Size: {round(self.pet.scale_factor * 100, 1)}%",
             f"  Foods Eaten: {self.total_eats}",
             f"  Times Petted: {self.total_pets}",
-            f"  Babies: {baby_count}" if baby_count > 0 else None,
-            f"  CPU: {self._cpu_percent:.0f}%",
         ]
-        stats_items = [s for s in stats_items if s is not None]
-        for s in stats_items:
-            a = QAction(s, menu)
-            a.setEnabled(False)
-            menu.addAction(a)
+        if baby_count > 0:
+            stats_lines.append(f"  Babies: {baby_count}")
+        stats_lines.append(f"  CPU: {self._cpu_percent:.0f}%")
 
-        menu.addSeparator()
+        for line in stats_lines:
+            self._add_info_action(menu, line)
 
-        # Achievements summary
-        total_ach = len(ACHIEVEMENTS)
+    def _build_achievements_action(self, menu):
+        total = len(ACHIEVEMENTS)
         unlocked = len(self.unlocked_achievements)
-        ach_action = QAction(f"  🏆 Achievements: {unlocked}/{total_ach}", menu)
-        ach_action.triggered.connect(self._show_achievements)
-        menu.addAction(ach_action)
+        action = QAction(f"  🏆 Achievements: {unlocked}/{total}", menu)
+        action.triggered.connect(self._show_achievements)
+        menu.addAction(action)
+
+    def _build_actions_section(self, menu):
+        actions = [
+            ("  🍕 Feed Kirby", self.spawn_snack),
+            ("  💕 Pet Kirby", self.pet_kirby),
+            ("  📊 Ranking Board", self._show_ranking),
+        ]
+        for label, callback in actions:
+            action = QAction(label, menu)
+            action.triggered.connect(callback)
+            menu.addAction(action)
 
         menu.addSeparator()
-
-        # Actions
-        feed_action = QAction("  🍕 Feed Kirby", menu)
-        feed_action.triggered.connect(self.spawn_snack)
-        menu.addAction(feed_action)
-
-        pet_action = QAction("  💕 Pet Kirby", menu)
-        pet_action.triggered.connect(self.pet_kirby)
-        menu.addAction(pet_action)
-
-        ranking_action = QAction("  📊 Ranking Board", menu)
-        ranking_action.triggered.connect(self._show_ranking)
-        menu.addAction(ranking_action)
-
-        menu.addSeparator()
-
         quit_action = QAction("  ❌ Quit", menu)
         quit_action.triggered.connect(self.app.quit)
         menu.addAction(quit_action)
 
-        self.tray.setContextMenu(menu)
+    @staticmethod
+    def _add_info_action(menu, text):
+        """Add a non-clickable informational menu item."""
+        action = QAction(text, menu)
+        action.setEnabled(False)
+        menu.addAction(action)
 
     def _refresh_tray(self):
-        mood_emoji = {"happy": "😊", "hungry": "😫", "sleeping": "💤", "excited": "🤩"}.get(self.mood, "😊")
+        mood_emoji = MOOD_EMOJIS.get(self.mood, "😊")
         self.tray.setToolTip(f"Kirby Lv.{self.level} | {mood_emoji} | Hunger: {self.hunger}%")
-        # Rebuild menu to update live stats
         self._build_tray_menu()
 
     def _on_tray_click(self, reason):
         if reason == QSystemTrayIcon.Trigger:
-            # Left-click: spawn food
             self.spawn_snack()
 
     def _show_ranking(self):
         from dialogs.ranking_board import RankingBoard
-        board = RankingBoard()
-        board.exec_()
+        RankingBoard().exec_()
 
     def _show_achievements(self):
         from dialogs.stats_dialog import StatsDialog
-        dialog = StatsDialog(self)
-        dialog.exec_()
+        StatsDialog(self).exec_()
+
+    # --- Properties ---
+
+    @property
+    def xp_for_next_level(self):
+        return xp_for_level(self.level)
 
     # --- Food ---
 
     def spawn_snack(self):
-        snack = SnackWidget()
-        self.snacks.append(snack)
+        self.snacks.append(SnackWidget())
 
     def _remove_snack(self, snack):
         if snack in self.snacks:
@@ -247,8 +249,8 @@ class MainController:
         for snack in self.snacks[:]:
             if pet_rect.intersects(snack.frameGeometry()):
                 self._eat(snack)
-        # Extra pets also eat
-        for baby in self.extra_pets[:]:
+
+        for baby in self.extra_pets:
             baby_rect = baby.frameGeometry()
             for snack in self.snacks[:]:
                 if baby_rect.intersects(snack.frameGeometry()):
@@ -274,13 +276,11 @@ class MainController:
             "Poyo~!",
         ]
         self.bubble.show_text(random.choice(thoughts), 2000)
-
         self._remove_snack(snack)
         self._reset_idle()
         self._check_achievements()
 
-        # Poop chance after eating
-        if self._eats_since_poop >= 3 and random.random() < 0.4:
+        if self._eats_since_poop >= EATS_UNTIL_POOP and random.random() < POOP_SPAWN_CHANCE:
             self._spawn_poop()
 
     # --- XP / Level ---
@@ -305,21 +305,20 @@ class MainController:
 
     def _hunger_tick(self):
         if self.hunger < 100:
-            self.hunger = min(100, self.hunger + self.HUNGER_RATE)
+            self.hunger = min(100, self.hunger + HUNGER_RATE)
         if self.hunger >= 90 and not self.snacks:
             self.spawn_snack()
 
     # --- Mood ---
 
     def _mood_tick(self):
-        self._idle_seconds += self.MOOD_TICK_MS / 1000
+        self._idle_seconds += MOOD_TICK_MS / 1000
 
-        if self._idle_seconds >= self.SLEEP_THRESHOLD_S and self.hunger < 60:
+        if self._idle_seconds >= SLEEP_THRESHOLD_S and self.hunger < 60:
             if self.mood != "sleeping":
                 self.mood = "sleeping"
                 self.bubble.show_text("Zzz...", 5000)
-                center = self.pet.frameGeometry().center()
-                self.particles.emit_sleep(center.x(), center.y() - 30)
+                self._emit_sleep_particles()
         elif self.hunger >= 80:
             self.mood = "hungry"
             if self.hunger >= 95:
@@ -330,8 +329,11 @@ class MainController:
             self.mood = "happy"
 
         if self.mood == "sleeping":
-            center = self.pet.frameGeometry().center()
-            self.particles.emit_sleep(center.x(), center.y() - 30)
+            self._emit_sleep_particles()
+
+    def _emit_sleep_particles(self):
+        center = self.pet.frameGeometry().center()
+        self.particles.emit_sleep(center.x(), center.y() - 30)
 
     def _reset_idle(self):
         self._idle_seconds = 0
@@ -356,22 +358,17 @@ class MainController:
         for ach in ACHIEVEMENTS:
             if ach["id"] in self.unlocked_achievements:
                 continue
-            if self._is_achievement_met(ach):
+            if is_achievement_met(
+                ach,
+                total_eats=self.total_eats,
+                level=self.level,
+                total_pets=self.total_pets,
+                star_eats=self.star_eats,
+            ):
                 self.unlocked_achievements.add(ach["id"])
                 center = self.pet.frameGeometry().center()
                 self.particles.emit_achievement(center.x(), center.y())
                 self.bubble.show_text(f"🏆 {ach['name']}!", 4000)
-
-    def _is_achievement_met(self, ach):
-        if ach.get("eats_req", 0) > 0 and self.total_eats < ach["eats_req"]:
-            return False
-        if ach.get("level_req", 0) > 0 and self.level < ach["level_req"]:
-            return False
-        if ach.get("pets_req", 0) > 0 and self.total_pets < ach["pets_req"]:
-            return False
-        if ach.get("star_req", 0) > 0 and self.star_eats < ach["star_req"]:
-            return False
-        return True
 
     # --- Poop ---
 
@@ -386,7 +383,7 @@ class MainController:
         if poop in self.poops:
             poop.close()
             self.poops.remove(poop)
-            self._add_xp(5)
+            self._add_xp(POOP_CLEAN_XP)
             center = poop.frameGeometry().center()
             self.particles.emit_eat(center.x(), center.y())
             self.bubble.show_text(random.choice(["Thanks!", "Clean~!", "Sparkle!"]), 1500)
@@ -396,7 +393,7 @@ class MainController:
     def _random_event(self):
         if self.mood == "sleeping":
             return
-        if random.random() > 0.3:  # 30% chance each tick
+        if random.random() > RANDOM_EVENT_CHANCE:
             return
 
         events = [
@@ -412,19 +409,17 @@ class MainController:
         self.bubble.show_text("*trips* Poyo!", 2500)
         center = self.pet.frameGeometry().center()
         self.particles.emit_eat(center.x(), center.y())
-        # Give a little bounce
         self.pet.vel.setY(-3.0)
 
     def _event_find_star(self):
-        self._add_xp(10)
-        self.bubble.show_text("Found a star! +10 XP!", 3000)
+        self._add_xp(STAR_FIND_XP)
+        self.bubble.show_text(f"Found a star! +{STAR_FIND_XP} XP!", 3000)
         center = self.pet.frameGeometry().center()
         self.particles.emit_achievement(center.x(), center.y())
 
     def _event_dance(self):
         self.bubble.show_text("Dance time!", 3000)
         center = self.pet.frameGeometry().center()
-        # Quick side-to-side movement
         self.pet.vel = QPointF(random.choice([-4, 4]), -2)
         for _ in range(6):
             self.particles.emit_heart(
@@ -434,10 +429,8 @@ class MainController:
 
     def _event_sneeze(self):
         self.bubble.show_text("Achoo!", 2000)
-        # Sneeze pushes Kirby back
-        self.pet.vel = QPointF(
-            -3.0 if self.pet.is_facing_right else 3.0, -1.0
-        )
+        direction = -3.0 if self.pet.is_facing_right else 3.0
+        self.pet.vel = QPointF(direction, -1.0)
 
     def _event_hiccup(self):
         self.bubble.show_text("*hic* ...hic!", 2500)
@@ -447,7 +440,7 @@ class MainController:
 
     def _cpu_tick(self):
         self._cpu_percent = psutil.cpu_percent(interval=None)
-        if self._cpu_percent > 80:
+        if self._cpu_percent > CPU_HIGH_THRESHOLD:
             self.bubble.show_text(
                 random.choice(["So hot...", "CPU burning!", "Need rest...", "Working hard!"]),
                 3000,
@@ -459,18 +452,18 @@ class MainController:
 
     def _time_greeting(self):
         hour = datetime.datetime.now().hour
-        if 5 <= hour < 9:
-            msg = "Good morning! Let's code!"
-        elif 9 <= hour < 12:
-            msg = "Time to be productive!"
-        elif 12 <= hour < 14:
-            msg = "Lunch time? Feed me!"
-        elif 14 <= hour < 18:
-            msg = "Afternoon coding session!"
-        elif 18 <= hour < 22:
-            msg = "Evening already? Keep going!"
-        else:
-            msg = "So late... still coding?"
+        greetings = [
+            (range(5, 9),   "Good morning! Let's code!"),
+            (range(9, 12),  "Time to be productive!"),
+            (range(12, 14), "Lunch time? Feed me!"),
+            (range(14, 18), "Afternoon coding session!"),
+            (range(18, 22), "Evening already? Keep going!"),
+        ]
+        msg = "So late... still coding?"
+        for hours, greeting in greetings:
+            if hour in hours:
+                msg = greeting
+                break
         QTimer.singleShot(2000, lambda: self.bubble.show_text(msg, 4000))
 
     # --- Breeding ---
@@ -481,32 +474,23 @@ class MainController:
             return
 
         all_pets = [self.pet] + self.extra_pets
-        if len(all_pets) < 2:
-            return
-        # Max 6 kirbys total
-        if len(all_pets) >= 6:
+        if len(all_pets) < 2 or len(all_pets) >= MAX_KIRBYS:
             return
 
-        import math
         for i in range(len(all_pets)):
             for j in range(i + 1, len(all_pets)):
-                a = all_pets[i]
-                b = all_pets[j]
-                ac = a.frameGeometry().center()
-                bc = b.frameGeometry().center()
-                dist = math.hypot(ac.x() - bc.x(), ac.y() - bc.y())
-                if dist < 50:
-                    self._breed(a, b)
+                ac = all_pets[i].frameGeometry().center()
+                bc = all_pets[j].frameGeometry().center()
+                if math.hypot(ac.x() - bc.x(), ac.y() - bc.y()) < BREEDING_DISTANCE:
+                    self._breed(all_pets[i], all_pets[j])
                     return
 
     def _breed(self, parent_a, parent_b):
-        self._breed_cooldown = 60  # 30 seconds cooldown (60 * 500ms)
+        self._breed_cooldown = BREED_COOLDOWN_FRAMES
 
-        # Spawn baby between the two parents
         mid_x = (parent_a.pos().x() + parent_b.pos().x()) / 2
         mid_y = (parent_a.pos().y() + parent_b.pos().y()) / 2
 
-        # Heart explosion
         for _ in range(12):
             self.particles.emit_heart(
                 int(mid_x) + random.randint(-20, 20),
@@ -518,17 +502,15 @@ class MainController:
             4000,
         )
 
-        # Create baby kirby (smaller scale)
         baby = PetWidget(self, is_baby=True)
         baby.scale_factor = 0.5
         baby.apply_scale()
         baby.move(int(mid_x), int(mid_y))
         baby.pos_f = QPointF(mid_x, mid_y)
-        # Give baby a little bounce away
         baby.vel = QPointF(random.uniform(-3, 3), -4)
         self.extra_pets.append(baby)
 
-        self._add_xp(30)
+        self._add_xp(BREED_XP)
 
     # --- Bubble follow ---
 
@@ -539,10 +521,9 @@ class MainController:
     # --- Persistence ---
 
     def _load_state(self):
-        if not os.path.exists(STATE_FILE):
+        state = load_json_safe(STATE_FILE, default={})
+        if not state:
             return
-        with open(STATE_FILE, "r") as f:
-            state = json.load(f)
         self.hunger = state.get("hunger", 0)
         self.xp = state.get("xp", 0)
         self.level = state.get("level", 1)
@@ -564,20 +545,17 @@ class MainController:
             "scale_factor": self.pet.scale_factor,
             "achievements": list(self.unlocked_achievements),
         }
-        with open(STATE_FILE, "w") as f:
-            json.dump(state, f, indent=2)
+        save_json_safe(STATE_FILE, state)
         self._update_ranking()
 
     def _update_ranking(self):
-        ranking = []
-        if os.path.exists(RANKING_FILE):
-            with open(RANKING_FILE, "r") as f:
-                ranking = json.load(f)
+        ranking = load_json_safe(RANKING_FILE, default=[])
+        if not isinstance(ranking, list):
+            ranking = []
         ranking = [e for e in ranking if e.get("username") != self.username]
         ranking.append({
             "username": self.username,
             "size": round(self.pet.scale_factor * 100, 1),
             "level": self.level,
         })
-        with open(RANKING_FILE, "w") as f:
-            json.dump(ranking, f, indent=2)
+        save_json_safe(RANKING_FILE, ranking)

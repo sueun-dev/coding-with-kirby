@@ -1,7 +1,14 @@
+"""
+Legacy status bar (kept for reference but no longer used in v2.0).
+"""
 from PyQt5.QtWidgets import QWidget, QPushButton, QApplication
 from PyQt5.QtGui import QPainter, QColor, QFont, QLinearGradient
 from PyQt5.QtCore import Qt, QRectF
+
 from dialogs.ranking_board import RankingBoard
+from utils.utils import MOOD_EMOJIS
+
+_BAR_HEIGHT = 36
 
 
 class TransparentSnackBar(QWidget):
@@ -9,8 +16,6 @@ class TransparentSnackBar(QWidget):
     Status bar at the top of the screen showing hunger, level, XP, mood,
     and action buttons.
     """
-
-    BAR_HEIGHT = 36
 
     def __init__(self, controller):
         super().__init__()
@@ -24,7 +29,7 @@ class TransparentSnackBar(QWidget):
         screen = QApplication.primaryScreen().geometry()
         bar_width = min(900, screen.width() - 40)
         x_pos = (screen.width() - bar_width) // 2
-        self.setGeometry(x_pos, 8, bar_width, self.BAR_HEIGHT)
+        self.setGeometry(x_pos, 8, bar_width, _BAR_HEIGHT)
 
         btn_style = (
             "background-color: rgba(255,255,255,30); color: white; "
@@ -60,7 +65,6 @@ class TransparentSnackBar(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
-        # Gradient background
         gradient = QLinearGradient(0, 0, self.width(), 0)
         gradient.setColorAt(0, QColor(30, 30, 50, 200))
         gradient.setColorAt(1, QColor(50, 30, 70, 200))
@@ -73,27 +77,20 @@ class TransparentSnackBar(QWidget):
         font.setBold(True)
         painter.setFont(font)
 
-        c = self.controller
-        mood_emoji = {"happy": "😊", "hungry": "😫", "sleeping": "💤", "excited": "🤩"}.get(c.mood, "😊")
-        level = c.level
-        xp = c.xp
-        xp_needed = c.xp_for_next_level
+        ctrl = self.controller
+        mood_emoji = MOOD_EMOJIS.get(ctrl.mood, "😊")
+        xp_needed = ctrl.xp_for_next_level
 
-        # Hunger bar
-        hunger_x = 12
-        painter.drawText(hunger_x, 0, 200, self.BAR_HEIGHT, Qt.AlignVCenter, f"{mood_emoji} Hunger: {c.hunger}%")
+        # Hunger text
+        painter.drawText(12, 0, 200, _BAR_HEIGHT, Qt.AlignVCenter, f"{mood_emoji} Hunger: {ctrl.hunger}%")
 
-        # XP bar background
-        xp_bar_x = 220
-        xp_bar_w = 120
-        xp_bar_y = 12
-        xp_bar_h = 12
+        # XP bar
+        xp_bar_x, xp_bar_w, xp_bar_y, xp_bar_h = 220, 120, 12, 12
         painter.setPen(Qt.NoPen)
         painter.setBrush(QColor(60, 60, 80, 180))
         painter.drawRoundedRect(xp_bar_x, xp_bar_y, xp_bar_w, xp_bar_h, 4, 4)
 
-        # XP bar fill
-        xp_ratio = min(1.0, xp / xp_needed) if xp_needed > 0 else 1.0
+        xp_ratio = min(1.0, ctrl.xp / xp_needed) if xp_needed > 0 else 1.0
         fill_w = int(xp_bar_w * xp_ratio)
         xp_gradient = QLinearGradient(xp_bar_x, 0, xp_bar_x + xp_bar_w, 0)
         xp_gradient.setColorAt(0, QColor(80, 200, 120))
@@ -101,17 +98,15 @@ class TransparentSnackBar(QWidget):
         painter.setBrush(xp_gradient)
         painter.drawRoundedRect(xp_bar_x, xp_bar_y, fill_w, xp_bar_h, 4, 4)
 
-        # XP text
         painter.setPen(QColor(255, 255, 255, 220))
         font.setPointSize(9)
         painter.setFont(font)
-        painter.drawText(xp_bar_x, xp_bar_y - 1, xp_bar_w, xp_bar_h + 2, Qt.AlignCenter, f"{xp}/{xp_needed}")
+        painter.drawText(xp_bar_x, xp_bar_y - 1, xp_bar_w, xp_bar_h + 2, Qt.AlignCenter, f"{ctrl.xp}/{xp_needed}")
 
-        # Level & stats
         font.setPointSize(11)
         painter.setFont(font)
-        size_pct = round(c.pet.scale_factor * 100, 1)
-        painter.drawText(355, 0, 250, self.BAR_HEIGHT, Qt.AlignVCenter, f"Lv.{level}  Size: {size_pct}%  Eats: {c.total_eats}")
+        size_pct = round(ctrl.pet.scale_factor * 100, 1)
+        painter.drawText(355, 0, 250, _BAR_HEIGHT, Qt.AlignVCenter, f"Lv.{ctrl.level}  Size: {size_pct}%  Eats: {ctrl.total_eats}")
 
     def _show_ranking(self):
         board = RankingBoard(self)

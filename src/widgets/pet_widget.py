@@ -1,10 +1,23 @@
-import random
+"""
+Kirby desktop pet widget with state-machine AI and velocity-based physics.
+"""
 import math
+import random
 from enum import Enum, auto
+
 from PyQt5.QtWidgets import QLabel, QWidget, QApplication
-from PyQt5.QtGui import QMovie, QCursor
-from PyQt5.QtCore import Qt, QTimer, QPointF, QPoint
-from utils.utils import resource_path
+from PyQt5.QtGui import QMovie
+from PyQt5.QtCore import Qt, QTimer, QPointF
+
+from utils.utils import (
+    resource_path,
+    PET_FPS, PET_MAX_SPEED, PET_CHASE_MAX_SPEED, PET_ACCELERATION,
+    PET_FRICTION, PET_THROW_FRICTION, PET_THROW_GRAVITY,
+    PET_FLIP_SPEED_THRESHOLD, PET_THROW_STOP_SPEED,
+    PET_MAX_THROW_SPEED, PET_MIN_THROW_SPEED,
+    BABY_MAX_SPEED, BABY_CHASE_MAX_SPEED, BABY_ACCELERATION,
+    WANDER_DURATION, IDLE_DURATION, REST_DURATION, INIT_WANDER_DURATION,
+)
 from utils.macos_window import pin_window_above_mission_control
 
 
@@ -22,36 +35,34 @@ class PetWidget(QWidget):
     Uses velocity with acceleration for smooth, natural motion.
     """
 
-    FPS = 60
-    MAX_SPEED = 2.2
-    CHASE_MAX_SPEED = 4.0
-    ACCELERATION = 0.08
-    FRICTION = 0.96
-    TURN_SMOOTHING = 0.06
-    THROW_FRICTION = 0.985
-    THROW_GRAVITY = 0.15
-
     def __init__(self, controller, is_baby=False):
         super().__init__()
         self.controller = controller
         self.is_baby = is_baby
         self.scale_factor = 0.5 if is_baby else 1.0
+
+        # Drag state
         self._dragging = False
         self._drag_offset = None
-        self._drag_positions = []  # for throw velocity calculation
+        self._drag_positions: list[tuple] = []
 
         # Physics
+        self._max_speed = BABY_MAX_SPEED if is_baby else PET_MAX_SPEED
+        self._chase_max_speed = BABY_CHASE_MAX_SPEED if is_baby else PET_CHASE_MAX_SPEED
+        self._acceleration = BABY_ACCELERATION if is_baby else PET_ACCELERATION
         self.pos_f = QPointF(0, 0)
         self.vel = QPointF(0, 0)
-        self.target_dir = QPointF(1, 0)
+        self._target_dir = QPointF(1, 0)
         self.is_facing_right = True
         self._throw_bounces = 0
 
         # State machine
         self.state = State.WANDERING
-        self._state_timer = 0  # frames remaining in current state
+        self._state_timer = 0
 
         self._init_ui()
+
+    # --- Initialization ---
 
     def _init_ui(self):
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
@@ -59,49 +70,44 @@ class PetWidget(QWidget):
         self.setMouseTracking(True)
 
         self.label = QLabel(self)
-        self.right_movie = QMovie(resource_path("images/Y3il.gif"))
-        self.left_movie = QMovie(resource_path("images/Y3il-reverse.gif"))
-        self.current_movie = self.right_movie
-        self.label.setMovie(self.current_movie)
-        self.current_movie.start()
+        self._right_movie = QMovie(resource_path("images/Y3il.gif"))
+        self._left_movie = QMovie(resource_path("images/Y3il-reverse.gif"))
+        self._current_movie = self._right_movie
+        self.label.setMovie(self._current_movie)
+        self._current_movie.start()
         self.label.setScaledContents(True)
-        self.label.resize(self.current_movie.frameRect().size())
+        self.label.resize(self._current_movie.frameRect().size())
 
         screen = QApplication.primaryScreen().geometry()
-        self.screen_width = screen.width()
-        self.screen_height = screen.height()
+        self._screen_width = screen.width()
+        self._screen_height = screen.height()
 
-        self.resize(self.current_movie.frameRect().size())
-        self.original_size = self.current_movie.frameRect().size()
+        self.resize(self._current_movie.frameRect().size())
+        self._original_size = self._current_movie.frameRect().size()
 
-        # Babies are faster and more energetic
-        if self.is_baby:
-            self.MAX_SPEED = 3.0
-            self.CHASE_MAX_SPEED = 5.0
-            self.ACCELERATION = 0.12
-
-        init_x = random.randint(100, self.screen_width - self.width() - 100)
-        init_y = random.randint(100, self.screen_height - self.height() - 100)
+        init_x = random.randint(100, self._screen_width - self.width() - 100)
+        init_y = random.randint(100, self._screen_height - self.height() - 100)
         self.move(init_x, init_y)
         self.pos_f = QPointF(init_x, init_y)
 
         self._pick_wander_direction()
-        self._state_timer = random.randint(120, 360)  # 2-6 sec
+        self._state_timer = random.randint(*INIT_WANDER_DURATION)
         self.show()
         pin_window_above_mission_control(self)
 
         if self.is_baby:
             self.apply_scale()
 
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self._tick)
-        self.timer.start(1000 // self.FPS)
+        self._tick_timer = QTimer(self)
+        self._tick_timer.timeout.connect(self._tick)
+        self._tick_timer.start(1000 // PET_FPS)
+
+    # --- Main tick ---
 
     def _tick(self):
         if self._dragging:
             return
 
-        # Thrown state (flung by user)
         if self.state == State.THROWN:
             self._do_thrown()
             self._apply_velocity()
@@ -109,16 +115,21 @@ class PetWidget(QWidget):
             return
 
         if self.controller.mood == "sleeping":
-            # Slow to a stop
             self.vel *= 0.92
             self._apply_velocity()
             return
 
         self._state_timer -= 1
+        self._update_state_transitions()
+        self._execute_state_behavior()
+        self._apply_velocity()
+        self.controller.check_collision()
 
-        # State transitions
+    def _update_state_transitions(self):
+        """Handle state machine transitions."""
         has_food = bool(self.controller.snacks)
-        should_chase = (self.controller.mood == "hungry" and has_food) if not self.is_baby else has_food
+        should_chase = has_food if self.is_baby else (self.controller.mood == "hungry" and has_food)
+
         if should_chase:
             self.state = State.CHASING
         elif self.state == State.CHASING and not should_chase:
@@ -126,29 +137,28 @@ class PetWidget(QWidget):
         elif self._state_timer <= 0:
             self._next_state()
 
-        # State behavior
-        if self.state == State.WANDERING:
-            self._do_wander()
-        elif self.state == State.IDLE:
-            self._do_idle()
-        elif self.state == State.RESTING:
-            self._do_rest()
-        elif self.state == State.CHASING:
-            self._do_chase()
+    def _execute_state_behavior(self):
+        """Execute the current state's behavior."""
+        behaviors = {
+            State.WANDERING: self._do_wander,
+            State.IDLE: self._do_idle,
+            State.RESTING: self._do_rest,
+            State.CHASING: self._do_chase,
+        }
+        handler = behaviors.get(self.state)
+        if handler:
+            handler()
 
-        self._apply_velocity()
-        self.controller.check_collision()
+    # --- State transitions ---
 
     def _next_state(self):
         if self.state == State.WANDERING:
-            # After wandering, either pause briefly or rest
             roll = random.random()
             if roll < 0.5:
                 self._enter_idle()
             elif roll < 0.75:
                 self._enter_resting()
             else:
-                # Pick new wander direction
                 self._enter_wandering()
         elif self.state in (State.IDLE, State.RESTING):
             self._enter_wandering()
@@ -156,45 +166,41 @@ class PetWidget(QWidget):
     def _enter_wandering(self):
         self.state = State.WANDERING
         self._pick_wander_direction()
-        self._state_timer = random.randint(150, 420)  # 2.5-7 sec
+        self._state_timer = random.randint(*WANDER_DURATION)
 
     def _enter_idle(self):
         self.state = State.IDLE
-        self._state_timer = random.randint(30, 120)  # 0.5-2 sec pause
+        self._state_timer = random.randint(*IDLE_DURATION)
 
     def _enter_resting(self):
         self.state = State.RESTING
-        self._state_timer = random.randint(90, 240)  # 1.5-4 sec
+        self._state_timer = random.randint(*REST_DURATION)
 
     def _pick_wander_direction(self):
         angle = random.uniform(0, 2 * math.pi)
-        self.target_dir = QPointF(math.cos(angle), math.sin(angle))
+        self._target_dir = QPointF(math.cos(angle), math.sin(angle))
 
     # --- State behaviors ---
 
     def _do_wander(self):
-        # Occasionally nudge direction slightly for organic feel
         if random.random() < 0.02:
             nudge = random.gauss(0, 0.3)
             cos_a, sin_a = math.cos(nudge), math.sin(nudge)
-            dx = self.target_dir.x() * cos_a - self.target_dir.y() * sin_a
-            dy = self.target_dir.x() * sin_a + self.target_dir.y() * cos_a
-            self.target_dir = QPointF(dx, dy)
+            dx = self._target_dir.x() * cos_a - self._target_dir.y() * sin_a
+            dy = self._target_dir.x() * sin_a + self._target_dir.y() * cos_a
+            self._target_dir = QPointF(dx, dy)
             self._normalize_target()
 
-        # Accelerate toward target direction
-        ax = self.target_dir.x() * self.ACCELERATION
-        ay = self.target_dir.y() * self.ACCELERATION
+        ax = self._target_dir.x() * self._acceleration
+        ay = self._target_dir.y() * self._acceleration
         self.vel = QPointF(self.vel.x() + ax, self.vel.y() + ay)
-        self._clamp_speed(self.MAX_SPEED)
+        self._clamp_speed(self._max_speed)
         self._update_facing()
 
     def _do_idle(self):
-        # Decelerate to a stop
-        self.vel *= self.FRICTION
+        self.vel *= PET_FRICTION
 
     def _do_rest(self):
-        # Almost stopped, gentle breathing-like micro-sway
         self.vel *= 0.94
         if random.random() < 0.03:
             self.vel = QPointF(
@@ -213,32 +219,30 @@ class PetWidget(QWidget):
         if dist < 1:
             return
 
-        # Smooth steering toward food
         desired = QPointF(dx / dist, dy / dist)
-        self.target_dir = QPointF(
-            self.target_dir.x() + (desired.x() - self.target_dir.x()) * 0.12,
-            self.target_dir.y() + (desired.y() - self.target_dir.y()) * 0.12,
+        self._target_dir = QPointF(
+            self._target_dir.x() + (desired.x() - self._target_dir.x()) * 0.12,
+            self._target_dir.y() + (desired.y() - self._target_dir.y()) * 0.12,
         )
         self._normalize_target()
 
-        # Faster acceleration when chasing
-        chase_accel = self.ACCELERATION * 1.8
+        chase_accel = self._acceleration * 1.8
         self.vel = QPointF(
-            self.vel.x() + self.target_dir.x() * chase_accel,
-            self.vel.y() + self.target_dir.y() * chase_accel,
+            self.vel.x() + self._target_dir.x() * chase_accel,
+            self.vel.y() + self._target_dir.y() * chase_accel,
         )
-        self._clamp_speed(self.CHASE_MAX_SPEED)
+        self._clamp_speed(self._chase_max_speed)
         self._update_facing()
 
     def _do_thrown(self):
         """Kirby was flung — apply gravity and high friction until stopped."""
         self.vel = QPointF(
-            self.vel.x() * self.THROW_FRICTION,
-            self.vel.y() * self.THROW_FRICTION + self.THROW_GRAVITY,
+            self.vel.x() * PET_THROW_FRICTION,
+            self.vel.y() * PET_THROW_FRICTION + PET_THROW_GRAVITY,
         )
         self._update_facing()
         speed = math.hypot(self.vel.x(), self.vel.y())
-        if speed < 0.5:
+        if speed < PET_THROW_STOP_SPEED:
             self._throw_bounces = 0
             self._enter_wandering()
             self.controller.bubble.show_text(
@@ -248,9 +252,7 @@ class PetWidget(QWidget):
     # --- Physics helpers ---
 
     def _apply_velocity(self):
-        # Apply friction
-        self.vel = QPointF(self.vel.x() * self.FRICTION, self.vel.y() * self.FRICTION)
-
+        self.vel = QPointF(self.vel.x() * PET_FRICTION, self.vel.y() * PET_FRICTION)
         new_pos = QPointF(self.pos_f.x() + self.vel.x(), self.pos_f.y() + self.vel.y())
         new_pos = self._bounce(new_pos)
         self.pos_f = new_pos
@@ -263,49 +265,48 @@ class PetWidget(QWidget):
             self.vel = QPointF(self.vel.x() * ratio, self.vel.y() * ratio)
 
     def _normalize_target(self):
-        mag = math.hypot(self.target_dir.x(), self.target_dir.y())
+        mag = math.hypot(self._target_dir.x(), self._target_dir.y())
         if mag > 0:
-            self.target_dir = QPointF(self.target_dir.x() / mag, self.target_dir.y() / mag)
+            self._target_dir = QPointF(self._target_dir.x() / mag, self._target_dir.y() / mag)
 
     def _update_facing(self):
-        # Only flip when velocity is clearly horizontal
         speed = math.hypot(self.vel.x(), self.vel.y())
-        if speed < 0.3:
+        if speed < PET_FLIP_SPEED_THRESHOLD:
             return
         facing_right = self.vel.x() >= 0
         if facing_right != self.is_facing_right:
             self.is_facing_right = facing_right
-            new_movie = self.right_movie if facing_right else self.left_movie
-            self.current_movie.stop()
-            self.current_movie = new_movie
-            self.label.setMovie(self.current_movie)
-            self.current_movie.start()
+            new_movie = self._right_movie if facing_right else self._left_movie
+            self._current_movie.stop()
+            self._current_movie = new_movie
+            self.label.setMovie(self._current_movie)
+            self._current_movie.start()
 
     def _bounce(self, pos):
-        max_x = self.screen_width - self.width()
-        max_y = self.screen_height - self.height()
+        max_x = self._screen_width - self.width()
+        max_y = self._screen_height - self.height()
         bounce_factor = 0.6 if self.state == State.THROWN else 0.5
         bounced = False
-        if pos.x() < 0:
-            pos.setX(0)
-            self.vel.setX(abs(self.vel.x()) * bounce_factor)
-            self.target_dir.setX(abs(self.target_dir.x()))
-            bounced = True
-        elif pos.x() > max_x:
-            pos.setX(max_x)
-            self.vel.setX(-abs(self.vel.x()) * bounce_factor)
-            self.target_dir.setX(-abs(self.target_dir.x()))
-            bounced = True
-        if pos.y() < 0:
-            pos.setY(0)
-            self.vel.setY(abs(self.vel.y()) * bounce_factor)
-            self.target_dir.setY(abs(self.target_dir.y()))
-            bounced = True
-        elif pos.y() > max_y:
-            pos.setY(max_y)
-            self.vel.setY(-abs(self.vel.y()) * bounce_factor)
-            self.target_dir.setY(-abs(self.target_dir.y()))
-            bounced = True
+
+        for axis, limit_lo, limit_hi in [("x", 0, max_x), ("y", 0, max_y)]:
+            getter = pos.x if axis == "x" else pos.y
+            setter = pos.setX if axis == "x" else pos.setY
+            vel_get = self.vel.x if axis == "x" else self.vel.y
+            vel_set = self.vel.setX if axis == "x" else self.vel.setY
+            tdir_get = self._target_dir.x if axis == "x" else self._target_dir.y
+            tdir_set = self._target_dir.setX if axis == "x" else self._target_dir.setY
+
+            if getter() < limit_lo:
+                setter(limit_lo)
+                vel_set(abs(vel_get()) * bounce_factor)
+                tdir_set(abs(tdir_get()))
+                bounced = True
+            elif getter() > limit_hi:
+                setter(limit_hi)
+                vel_set(-abs(vel_get()) * bounce_factor)
+                tdir_set(-abs(tdir_get()))
+                bounced = True
+
         if bounced and self.state == State.THROWN:
             self._throw_bounces += 1
             if self._throw_bounces <= 3:
@@ -324,8 +325,8 @@ class PetWidget(QWidget):
         return nearest.frameGeometry().center()
 
     def apply_scale(self):
-        w = int(self.original_size.width() * self.scale_factor)
-        h = int(self.original_size.height() * self.scale_factor)
+        w = int(self._original_size.width() * self.scale_factor)
+        h = int(self._original_size.height() * self.scale_factor)
         self.resize(w, h)
         self.label.resize(w, h)
 
@@ -342,38 +343,48 @@ class PetWidget(QWidget):
             new_pos = event.globalPos() - self._drag_offset
             self.move(new_pos)
             self.pos_f = QPointF(new_pos.x(), new_pos.y())
-            # Track last few positions for throw velocity
             self._drag_positions.append((event.globalPos(), event.timestamp()))
             if len(self._drag_positions) > 6:
                 self._drag_positions.pop(0)
 
     def mouseReleaseEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            if self._dragging and self._drag_offset is not None:
-                delta = (event.globalPos() - self.pos()) - self._drag_offset
-                if delta.manhattanLength() < 5:
-                    self.controller.pet_kirby()
-                elif len(self._drag_positions) >= 2:
-                    # Calculate throw velocity from recent drag
-                    p1, t1 = self._drag_positions[0]
-                    p2, t2 = self._drag_positions[-1]
-                    dt = max(1, t2 - t1)
-                    vx = (p2.x() - p1.x()) / dt * 16.0
-                    vy = (p2.y() - p1.y()) / dt * 16.0
-                    speed = math.hypot(vx, vy)
-                    if speed > 2.0:
-                        # Cap throw speed
-                        max_throw = 18.0
-                        if speed > max_throw:
-                            ratio = max_throw / speed
-                            vx *= ratio
-                            vy *= ratio
-                        self.vel = QPointF(vx, vy)
-                        self.state = State.THROWN
-                        self._throw_bounces = 0
-                        self.controller.bubble.show_text(
-                            random.choice(["Wheee!", "Poyooo~!", "Waaaah!"]), 1500
-                        )
-            self._dragging = False
-            self._drag_offset = None
-            self._drag_positions = []
+        if event.button() != Qt.LeftButton or not self._dragging:
+            return
+
+        delta = (event.globalPos() - self.pos()) - self._drag_offset
+        if delta.manhattanLength() < 5:
+            # Click — pet Kirby
+            self.controller.pet_kirby()
+        else:
+            self._try_throw()
+
+        self._dragging = False
+        self._drag_offset = None
+        self._drag_positions = []
+
+    def _try_throw(self):
+        """Calculate throw velocity from drag history and enter THROWN state."""
+        if len(self._drag_positions) < 2:
+            return
+
+        p1, t1 = self._drag_positions[0]
+        p2, t2 = self._drag_positions[-1]
+        dt = max(1, t2 - t1)
+        vx = (p2.x() - p1.x()) / dt * 16.0
+        vy = (p2.y() - p1.y()) / dt * 16.0
+        speed = math.hypot(vx, vy)
+
+        if speed < PET_MIN_THROW_SPEED:
+            return
+
+        if speed > PET_MAX_THROW_SPEED:
+            ratio = PET_MAX_THROW_SPEED / speed
+            vx *= ratio
+            vy *= ratio
+
+        self.vel = QPointF(vx, vy)
+        self.state = State.THROWN
+        self._throw_bounces = 0
+        self.controller.bubble.show_text(
+            random.choice(["Wheee!", "Poyooo~!", "Waaaah!"]), 1500
+        )
