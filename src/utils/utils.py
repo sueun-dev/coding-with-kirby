@@ -9,7 +9,7 @@ import os
 import sys
 from typing import Any
 
-__version__ = "2.3.0"
+__version__ = "2.4.0"
 
 logger = logging.getLogger(__name__)
 
@@ -69,11 +69,15 @@ HUNGER_STARVING_THRESHOLD = 95
 MAX_POOPS = 20
 MAX_SNACKS = 10
 MAX_PARTICLES = 500
+MAX_LEVELUPS_PER_TICK = 50  # safety guard against XP-driven infinite loops
 
 # --- Physics constants ---
 PARTICLE_GRAVITY = 0.08
 PARTICLE_DECAY_RANGE = (0.015, 0.035)
 PARTICLE_TICK_MS = 16
+PARTICLE_SPEED_RANGE = (1.5, 4.0)  # initial random speed of a burst particle
+PARTICLE_UPWARD_BOOST = 2.0  # extra upward velocity so particles arc up first
+PARTICLE_MIN_LIFE = 0.001  # below this a particle is considered dead
 
 # --- Timer intervals (ms) ---
 HUNGER_TICK_MS = 1000
@@ -109,16 +113,27 @@ PET_BOUNCE_FACTOR_THROWN = 0.6
 PET_MAX_THROW_BOUNCES = 3
 PET_SLEEP_FRICTION = 0.92
 PET_REST_FRICTION = 0.94
+PET_WANDER_NUDGE_SIGMA = 0.3  # gaussian spread of a wander course-correction
+PET_REST_SWAY_SIGMA = 0.05  # gaussian spread of a resting sway
+PET_THROW_VELOCITY_SCALE = 16.0  # drag pixels/ms -> throw velocity multiplier
+PET_CLICK_THRESHOLD_PX = 5  # drag shorter than this counts as a click (pet)
+PET_DRAG_HISTORY_LEN = 6  # mouse samples kept to estimate throw velocity
 
 # Growth formula: growth = base / (1 + (level - 1) * diminish)
 PET_GROWTH_BASE = 0.02
 PET_GROWTH_DIMINISH = 0.05
 
+# Scale factors
+ADULT_SCALE = 1.0
+BABY_SCALE = 0.5
+
 # Baby overrides
 BABY_MAX_SPEED = 3.0
 BABY_CHASE_MAX_SPEED = 5.0
 BABY_ACCELERATION = 0.12
-BABY_SCALE = 0.5
+BABY_SPAWN_MARGIN = 50  # keep a newborn this far from the screen edge
+BABY_SPAWN_VX_RANGE = (-3.0, 3.0)  # horizontal launch velocity at birth
+BABY_SPAWN_VY = -4.0  # upward launch velocity at birth
 
 # State timers (frames)
 WANDER_DURATION = (150, 420)
@@ -138,6 +153,19 @@ RANKING_ROW_HEIGHT = 44
 # --- Username ---
 MAX_USERNAME_LENGTH = 20
 
+# --- Menu-bar tray icon ---
+TRAY_ICON_SIZE = 22  # logical px
+TRAY_ICON_RETINA_SCALE = 2  # render at 2x for retina crispness
+TRAY_ICON_FONT_SIZE = 14  # emoji point size
+
+# --- Random-event impulse velocities (px/frame) ---
+EVENT_TRIP_HOP = -3.0  # upward hop when Kirby trips
+EVENT_DANCE_HSPEED = 4.0  # horizontal speed of a dance step
+EVENT_DANCE_HOP = -2.0  # upward hop of a dance step
+EVENT_SNEEZE_PUSH = 3.0  # recoil speed from a sneeze
+EVENT_SNEEZE_HOP = -1.0  # upward hop from a sneeze
+EVENT_HICCUP_HOP = -2.5  # upward hop from a hiccup
+
 
 def xp_for_level(level: int) -> int:
     """Return XP required to reach the next level.
@@ -149,6 +177,26 @@ def xp_for_level(level: int) -> int:
         Positive integer XP threshold, scaling exponentially.
     """
     return int(50 * (1.3 ** level))
+
+
+def _coerce_int(value: Any, default: int = 0) -> int:
+    """Coerce *value* to ``int``, falling back to *default* on bad input.
+
+    Unlike a bare ``int(value)`` this never raises, so a corrupted or
+    hand-edited save file (e.g. ``{"hunger": "abc"}``) cannot crash state
+    loading.
+
+    Args:
+        value: Any value to coerce.
+        default: Returned when *value* cannot be converted.
+
+    Returns:
+        The integer value, or *default*.
+    """
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def is_achievement_met(
@@ -199,12 +247,12 @@ def validate_state(state: Any) -> dict[str, Any]:
         return {}
 
     cleaned: dict[str, Any] = {}
-    cleaned["hunger"] = max(0, min(MAX_HUNGER, int(state.get("hunger", 0))))
-    cleaned["xp"] = max(0, int(state.get("xp", 0)))
-    cleaned["level"] = max(1, int(state.get("level", 1)))
-    cleaned["total_eats"] = max(0, int(state.get("total_eats", 0)))
-    cleaned["total_pets"] = max(0, int(state.get("total_pets", 0)))
-    cleaned["star_eats"] = max(0, int(state.get("star_eats", 0)))
+    cleaned["hunger"] = max(0, min(MAX_HUNGER, _coerce_int(state.get("hunger", 0))))
+    cleaned["xp"] = max(0, _coerce_int(state.get("xp", 0)))
+    cleaned["level"] = max(1, _coerce_int(state.get("level", 1), default=1))
+    cleaned["total_eats"] = max(0, _coerce_int(state.get("total_eats", 0)))
+    cleaned["total_pets"] = max(0, _coerce_int(state.get("total_pets", 0)))
+    cleaned["star_eats"] = max(0, _coerce_int(state.get("star_eats", 0)))
 
     try:
         scale = float(state.get("scale_factor", 1.0))
@@ -215,8 +263,12 @@ def validate_state(state: Any) -> dict[str, Any]:
     cleaned["scale_factor"] = max(0.1, min(10.0, scale))
 
     achievements = state.get("achievements", [])
+    if not isinstance(achievements, list):
+        achievements = []
     valid_ids = {a["id"] for a in ACHIEVEMENTS}
-    cleaned["achievements"] = [a for a in achievements if a in valid_ids]
+    cleaned["achievements"] = [
+        a for a in achievements if isinstance(a, str) and a in valid_ids
+    ]
     return cleaned
 
 
@@ -282,7 +334,9 @@ def save_json_safe(filepath: str, data: Any) -> None:
         with open(tmp_path, "w", encoding="utf-8") as fh:
             json.dump(data, fh, indent=2)
         os.replace(tmp_path, filepath)
-    except OSError as exc:
+    except (OSError, TypeError, ValueError) as exc:
+        # OSError: disk/permission failure. TypeError/ValueError: data was
+        # not JSON-serializable. Either way, log and clean up the temp file.
         logger.error("Failed to save %s: %s", filepath, exc)
         if os.path.exists(tmp_path):
             try:
