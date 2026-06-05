@@ -7,12 +7,12 @@ import random
 from enum import Enum, auto
 from typing import TYPE_CHECKING, Optional
 
-from PyQt5.QtWidgets import QLabel, QWidget, QApplication
+from PyQt5.QtWidgets import QLabel, QWidget
 from PyQt5.QtGui import QMovie
 from PyQt5.QtCore import Qt, QTimer, QPointF
 
 from utils.utils import (
-    resource_path,
+    resource_path, screen_geometry,
     PET_FPS, PET_MAX_SPEED, PET_CHASE_MAX_SPEED, PET_ACCELERATION,
     PET_FRICTION, PET_THROW_FRICTION, PET_THROW_GRAVITY,
     PET_FLIP_SPEED_THRESHOLD, PET_THROW_STOP_SPEED,
@@ -60,8 +60,8 @@ class PetWidget(QWidget):
 
         # Drag state
         self._dragging = False
-        self._drag_offset: Optional[QPointF] = None
-        self._drag_positions: list[tuple] = []
+        self._drag_offset: Optional[QPoint] = None
+        self._drag_positions: list[tuple[QPoint, int]] = []
 
         # Physics
         self._max_speed = BABY_MAX_SPEED if is_baby else PET_MAX_SPEED
@@ -95,7 +95,7 @@ class PetWidget(QWidget):
         self.label.setScaledContents(True)
         self.label.resize(self._current_movie.frameRect().size())
 
-        screen = QApplication.primaryScreen().geometry()
+        screen = screen_geometry()
         self._screen_width = screen.width()
         self._screen_height = screen.height()
 

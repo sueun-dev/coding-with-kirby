@@ -18,7 +18,7 @@ from widgets.thought_bubble import ThoughtBubble
 from utils.utils import (
     STATE_FILE, RANKING_FILE, ACHIEVEMENTS,
     xp_for_level, is_achievement_met, validate_state,
-    load_json_safe, save_json_safe,
+    load_json_safe, save_json_safe, screen_geometry,
     EATS_UNTIL_POOP, POOP_SPAWN_CHANCE, RANDOM_EVENT_CHANCE,
     CPU_HIGH_THRESHOLD, MAX_KIRBYS, BREEDING_DISTANCE,
     BREED_COOLDOWN_FRAMES, POOP_CLEAN_XP, BREED_XP, STAR_FIND_XP,
@@ -419,7 +419,7 @@ class MainController:
             return
         self._breed_cooldown = BREED_COOLDOWN_FRAMES
 
-        screen = QApplication.primaryScreen().geometry()
+        screen = screen_geometry()
         max_x = screen.width() - BABY_SPAWN_MARGIN
         max_y = screen.height() - BABY_SPAWN_MARGIN
         mid_x = max(0, min(max_x, (parent_a.pos().x() + parent_b.pos().x()) / 2))

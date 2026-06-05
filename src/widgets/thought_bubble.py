@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from PyQt5.QtWidgets import QWidget, QApplication
+from PyQt5.QtWidgets import QWidget
 from PyQt5.QtGui import QPainter, QColor, QFont, QPainterPath, QPaintEvent
 from PyQt5.QtCore import Qt, QTimer, QRectF
 
 from utils.macos_window import pin_window_above_mission_control
-from utils.utils import FADE_TICK_MS
+from utils.utils import FADE_TICK_MS, screen_geometry
 
 _OPACITY_THRESHOLD = 0.01
 _FADE_RATE = 0.15
@@ -49,7 +49,7 @@ class ThoughtBubble(QWidget):
         self._hide_timer.setSingleShot(True)
         self._hide_timer.timeout.connect(self.fade_out)
 
-        self._screen = QApplication.primaryScreen().geometry()
+        self._screen = screen_geometry()
         self.show()
         pin_window_above_mission_control(self)
 

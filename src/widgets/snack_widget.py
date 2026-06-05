@@ -5,11 +5,11 @@ from __future__ import annotations
 import random
 from typing import Optional, Tuple
 
-from PyQt5.QtWidgets import QLabel, QWidget, QApplication
+from PyQt5.QtWidgets import QLabel, QWidget
 from PyQt5.QtGui import QFont
 from PyQt5.QtCore import Qt
 
-from utils.utils import FOODS, SNACK_SPAWN_MARGIN
+from utils.utils import FOODS, SNACK_SPAWN_MARGIN, screen_geometry
 from utils.macos_window import pin_window_above_mission_control
 
 FoodDef = Tuple[str, str, int, int]  # (emoji, name, hunger_restore, xp_reward)
@@ -35,7 +35,7 @@ class SnackWidget(QWidget):
         self.label.adjustSize()
         self.resize(self.label.size())
 
-        screen = QApplication.primaryScreen().geometry()
+        screen = screen_geometry()
         max_x = screen.width() - self.width() - SNACK_SPAWN_MARGIN
         max_y = screen.height() - self.height() - SNACK_SPAWN_MARGIN
         x = random.randint(SNACK_SPAWN_MARGIN, max(SNACK_SPAWN_MARGIN, max_x))
