@@ -7,7 +7,10 @@ import logging
 import math
 import os
 import sys
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from PyQt5.QtCore import QRect
 
 __version__ = "2.4.0"
 
@@ -270,6 +273,25 @@ def validate_state(state: Any) -> dict[str, Any]:
         a for a in achievements if isinstance(a, str) and a in valid_ids
     ]
     return cleaned
+
+
+def screen_geometry() -> "QRect":
+    """Return the primary screen's geometry.
+
+    Wraps ``QApplication.primaryScreen()``, which is typed as optional and
+    can be ``None`` when no display is attached. In that case a zero-sized
+    ``QRect`` is returned so callers never crash on ``None.geometry()``.
+
+    Returns:
+        The primary screen geometry, or an empty ``QRect`` if unavailable.
+    """
+    from PyQt5.QtCore import QRect
+    from PyQt5.QtWidgets import QApplication
+
+    screen = QApplication.primaryScreen()
+    if screen is None:
+        return QRect()
+    return screen.geometry()
 
 
 def resource_path(relative_path: str) -> str:

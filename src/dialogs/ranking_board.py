@@ -71,8 +71,11 @@ class RankingBoard(QDialog):
         # Clear existing
         while self._content_layout.count():
             item = self._content_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            if item is None:
+                break
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
 
         if not ranking:
             empty = QLabel("No ranking data yet.\nStart playing!")

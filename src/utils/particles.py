@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 import random
 
-from PyQt5.QtWidgets import QWidget, QApplication
+from PyQt5.QtWidgets import QWidget
 from PyQt5.QtGui import QPainter, QColor, QFont, QPaintEvent
 from PyQt5.QtCore import Qt, QTimer, QPointF
 
@@ -13,6 +13,7 @@ from utils.macos_window import pin_window_above_mission_control
 from utils.utils import (
     PARTICLE_GRAVITY, PARTICLE_DECAY_RANGE, PARTICLE_TICK_MS, MAX_PARTICLES,
     PARTICLE_SPEED_RANGE, PARTICLE_UPWARD_BOOST, PARTICLE_MIN_LIFE,
+    screen_geometry,
 )
 
 
@@ -89,7 +90,7 @@ class ParticleOverlay(QWidget):
         )
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_TransparentForMouseEvents)
-        screen = QApplication.primaryScreen().geometry()
+        screen = screen_geometry()
         self.setGeometry(screen)
         self._particles: list[Particle] = []
 
