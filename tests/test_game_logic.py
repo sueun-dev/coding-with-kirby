@@ -7,12 +7,11 @@ from utils.utils import (
     is_achievement_met,
     ACHIEVEMENTS, FOODS,
     MAX_HUNGER, MAX_SNACKS, MAX_POOPS, MAX_KIRBYS,
-    EATS_UNTIL_POOP, POOP_SPAWN_CHANCE,
+    EATS_UNTIL_POOP,
     HUNGER_RATE, HUNGER_AUTO_FEED_THRESHOLD,
     HUNGER_SLEEP_THRESHOLD, HUNGER_HUNGRY_THRESHOLD,
     HUNGER_EXCITED_THRESHOLD,
-    BREED_COOLDOWN_FRAMES, BREEDING_DISTANCE,
-    POOP_CLEAN_XP, BREED_XP, STAR_FIND_XP,
+    BREED_COOLDOWN_FRAMES,
     SLEEP_THRESHOLD_S,
 )
 
@@ -318,7 +317,6 @@ class TestBreedingLogic:
         assert ctrl._breed_cooldown == 4
 
     def test_max_kirbys_blocks_breeding(self):
-        ctrl = FakeController()
         all_pets = list(range(MAX_KIRBYS))
         can_breed = len(all_pets) < MAX_KIRBYS
         assert can_breed is False

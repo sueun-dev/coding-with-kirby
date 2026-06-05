@@ -6,12 +6,12 @@
 
 ![Kirby](images/Y3il.gif)
 
-**v2.3.0**
+**v2.4.0**
 
 [![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
 [![PyQt5](https://img.shields.io/badge/PyQt5-5.15+-41CD52?style=flat-square)](https://pypi.org/project/PyQt5/)
 [![macOS](https://img.shields.io/badge/macOS-Supported-000000?style=flat-square&logo=apple&logoColor=white)](https://www.apple.com/macos/)
-[![Tests](https://img.shields.io/badge/Tests-135%20passed-brightgreen?style=flat-square)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-158%20passed-brightgreen?style=flat-square)](tests/)
 [![License](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](LICENSE)
 
 ---
@@ -94,7 +94,8 @@ python3 -m pytest
 - **Menu bar tray icon** — All controls live in the macOS menu bar. Left-click to feed, right-click for full menu
 - **Particle system** — Full-screen transparent overlay with eat, heart, sleep, level-up, sweat, and achievement effects
 - **Thought bubbles** — Kirby tells you what he's thinking with smooth fade-in/out
-- **Zero magic numbers** — All tuning constants are named and centralized in `utils.py`
+- **Named tuning constants** — Gameplay, physics, and timing values are named and centralized in `utils.py`
+- **Fully type-annotated** — Every public function carries parameter and return type hints
 
 ---
 
@@ -120,7 +121,8 @@ coding-with-kirby/
 ├── src/
 │   ├── main.py                    # Entry point
 │   ├── core/
-│   │   └── main_controller.py     # Central game controller (state, tray, timers)
+│   │   ├── main_controller.py     # Central game controller (state, timers, systems)
+│   │   └── tray_menu.py           # macOS menu-bar tray icon view (TrayPresenter)
 │   ├── widgets/
 │   │   ├── pet_widget.py          # Kirby: state machine AI + physics engine
 │   │   ├── snack_widget.py        # Emoji food items
@@ -134,10 +136,13 @@ coding-with-kirby/
 │       ├── particles.py           # Full-screen particle overlay (6 presets)
 │       └── macos_window.py        # Cocoa window pinning for Mission Control
 ├── tests/
-│   ├── test_utils.py              # Constants, validators, JSON I/O (38 tests)
-│   ├── test_game_logic.py         # XP, hunger, mood, achievements (40 tests)
-│   ├── test_physics.py            # Velocity, bounce, throw, friction (24 tests)
-│   └── test_bugfixes.py           # Regression tests for past bugs (33 tests)
+│   ├── test_utils.py              # Constants, validators, JSON I/O
+│   ├── test_game_logic.py         # XP, hunger, mood, achievements
+│   ├── test_physics.py            # Velocity, bounce, throw, friction
+│   ├── test_bugfixes.py           # Regression tests for past bugs
+│   └── test_refactor_v240.py      # v2.4.0 hardening regressions + constants
+├── scripts/
+│   └── smoke_headless.py          # Headless end-to-end run (offscreen Qt)
 ├── images/
 │   ├── Y3il.gif                   # Kirby walking right
 │   └── Y3il-reverse.gif           # Kirby walking left
@@ -166,16 +171,34 @@ The `.app` bundle will be in `dist/`. If macOS blocks it: **System Settings > Pr
 ## Running Tests
 
 ```bash
-# 135 tests covering game logic, physics, utilities, and bug regressions
+# 158 tests covering game logic, physics, utilities, and bug regressions
 uv run pytest -v
 
 # Or with pip
 python3 -m pytest -v
 ```
 
+For a full end-to-end run without a display (instantiates the controller and
+every widget, exercises all game systems), use the headless smoke harness:
+
+```bash
+QT_QPA_PLATFORM=offscreen python3 scripts/smoke_headless.py
+```
+
 ---
 
 ## Changelog
+
+### v2.4.0
+- **Robustness:** `validate_state` no longer crashes on corrupted save files — non-numeric fields (`"hunger": "abc"`) and malformed `achievements` (int, string, or list of dicts) are sanitized instead of raising
+- **Robustness:** the ranking board and `_update_ranking` tolerate malformed `ranking.json` (non-dict rows, `null` levels) instead of throwing on every refresh
+- **Robustness:** `save_json_safe` catches non-serializable data and cleans up its temp file; Cocoa window-pinning degrades gracefully instead of failing hard
+- **Fix:** `PetWidget` spawn no longer crashes on small/secondary displays (empty `randint` range)
+- **Fix:** the eat-counter resets even when at the poop cap (no unbounded growth); poop now emits its particle effect (previously-dead `emit_poop`); removed a double sleep-particle emission
+- **Refactor:** extracted the menu-bar UI into `core/tray_menu.py` (`TrayPresenter`), slimming the controller god-class
+- **Perf:** particle and thought-bubble painting reuse cached fonts/colors instead of allocating per frame
+- **Quality:** full type annotations on every public function; remaining gameplay/physics/timing magic numbers named in `utils.py`; clean-shutdown teardown for movies and baby pets
+- **Tests:** 158 tests (23 new) + a headless end-to-end smoke harness (`scripts/smoke_headless.py`)
 
 ### v2.3.0
 - Full Google Python Style Guide compliance audit

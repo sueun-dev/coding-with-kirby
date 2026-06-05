@@ -15,12 +15,12 @@ logging.basicConfig(
 )
 
 
-def main():
+def main() -> None:
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
     controller = MainController(app)
 
-    def on_quit():
+    def on_quit() -> None:
         controller.stop_all_timers()
         controller.save_state()
 

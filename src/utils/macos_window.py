@@ -8,7 +8,10 @@ collection-behavior flags.
 from __future__ import annotations
 
 import ctypes
+import logging
 import sys
+
+logger = logging.getLogger(__name__)
 
 # kCGStatusWindowLevel — renders above Mission Control.
 _STATUS_WINDOW_LEVEL = 25
@@ -43,19 +46,19 @@ def pin_window_above_mission_control(qt_widget: object) -> None:
     # Force native window handle creation.
     qt_widget.winId()  # type: ignore[attr-defined]
 
-    view_ptr = int(qt_widget.winId())  # type: ignore[attr-defined]
-    ns_view = objc.objc_object(c_void_p=ctypes.c_void_p(view_ptr))
-    ns_window = ns_view.window()
+    try:
+        view_ptr = int(qt_widget.winId())  # type: ignore[attr-defined]
+        ns_view = objc.objc_object(c_void_p=ctypes.c_void_p(view_ptr))
+        ns_window = ns_view.window()
+        if ns_window is None:
+            return
 
-    if ns_window is None:
-        return
-
-    ns_window.setLevel_(_STATUS_WINDOW_LEVEL)
-
-    behavior = (
-        NSWindowCollectionBehaviorCanJoinAllSpaces
-        | NSWindowCollectionBehaviorStationary
-        | NSWindowCollectionBehaviorFullScreenAuxiliary
-        | NSWindowCollectionBehaviorIgnoresCycle
-    )
-    ns_window.setCollectionBehavior_(behavior)
+        ns_window.setLevel_(_STATUS_WINDOW_LEVEL)
+        ns_window.setCollectionBehavior_(
+            NSWindowCollectionBehaviorCanJoinAllSpaces
+            | NSWindowCollectionBehaviorStationary
+            | NSWindowCollectionBehaviorFullScreenAuxiliary
+            | NSWindowCollectionBehaviorIgnoresCycle
+        )
+    except Exception as exc:  # best-effort: never let pinning break a window
+        logger.debug("Could not pin window above Mission Control: %s", exc)

@@ -6,11 +6,14 @@ import math
 import random
 
 from PyQt5.QtWidgets import QWidget, QApplication
-from PyQt5.QtGui import QPainter, QColor, QFont
+from PyQt5.QtGui import QPainter, QColor, QFont, QPaintEvent
 from PyQt5.QtCore import Qt, QTimer, QPointF
 
 from utils.macos_window import pin_window_above_mission_control
-from utils.utils import PARTICLE_GRAVITY, PARTICLE_DECAY_RANGE, PARTICLE_TICK_MS, MAX_PARTICLES
+from utils.utils import (
+    PARTICLE_GRAVITY, PARTICLE_DECAY_RANGE, PARTICLE_TICK_MS, MAX_PARTICLES,
+    PARTICLE_SPEED_RANGE, PARTICLE_UPWARD_BOOST, PARTICLE_MIN_LIFE,
+)
 
 
 class Particle:
@@ -18,22 +21,26 @@ class Particle:
 
     __slots__ = ("pos", "vel", "char", "color", "size", "life", "decay")
 
-    def __init__(self, x, y, char, color, size=14):
+    def __init__(self, x: float, y: float, char: str, color: QColor, size: int = 14) -> None:
         self.pos = QPointF(x, y)
         angle = random.uniform(0, 2 * math.pi)
-        speed = random.uniform(1.5, 4.0)
-        self.vel = QPointF(math.cos(angle) * speed, math.sin(angle) * speed - 2.0)
+        speed = random.uniform(*PARTICLE_SPEED_RANGE)
+        self.vel = QPointF(
+            math.cos(angle) * speed,
+            math.sin(angle) * speed - PARTICLE_UPWARD_BOOST,
+        )
         self.char = char
         self.color = color
         self.size = size
         self.life = 1.0
         self.decay = random.uniform(*PARTICLE_DECAY_RANGE)
 
-    def update(self):
+    def update(self) -> bool:
+        """Advance one frame. Returns ``True`` while the particle is alive."""
         self.pos += self.vel
         self.vel.setY(self.vel.y() + PARTICLE_GRAVITY)
         self.life -= self.decay
-        return self.life > 0.001
+        return self.life > PARTICLE_MIN_LIFE
 
 
 class ParticleOverlay(QWidget):
@@ -72,7 +79,7 @@ class ParticleOverlay(QWidget):
         },
     }
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.setWindowFlags(
             Qt.FramelessWindowHint
@@ -86,6 +93,10 @@ class ParticleOverlay(QWidget):
         self.setGeometry(screen)
         self._particles: list[Particle] = []
 
+        # Reusable paint objects — avoid per-particle, per-frame allocation.
+        self._font_cache: dict[int, QFont] = {}
+        self._scratch_color = QColor()
+
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
         self._timer.start(PARTICLE_TICK_MS)
@@ -94,11 +105,11 @@ class ParticleOverlay(QWidget):
 
     # --- Public emitters ---
 
-    def _can_emit(self, count=1):
+    def _can_emit(self, count: int = 1) -> bool:
         """Check if we can add more particles without exceeding the cap."""
         return len(self._particles) + count <= MAX_PARTICLES
 
-    def emit_preset(self, name, x, y):
+    def emit_preset(self, name: str, x: float, y: float) -> None:
         """Emit particles from a named preset."""
         preset = self._PRESETS[name]
         if not self._can_emit(preset["count"]):
@@ -116,19 +127,19 @@ class ParticleOverlay(QWidget):
             size = random.randint(*preset["size_range"])
             self._particles.append(Particle(x, y, char, color, size))
 
-    def emit_eat(self, x, y):
+    def emit_eat(self, x: float, y: float) -> None:
         self.emit_preset("eat", x, y)
 
-    def emit_heart(self, x, y):
+    def emit_heart(self, x: float, y: float) -> None:
         self.emit_preset("heart", x, y)
 
-    def emit_achievement(self, x, y):
+    def emit_achievement(self, x: float, y: float) -> None:
         self.emit_preset("achievement", x, y)
 
-    def emit_level_up(self, x, y):
+    def emit_level_up(self, x: float, y: float) -> None:
         self.emit_preset("level_up", x, y)
 
-    def emit_sleep(self, x, y):
+    def emit_sleep(self, x: float, y: float) -> None:
         if not self._can_emit(1):
             return
         color = QColor(150, 180, 255, 200)
@@ -137,7 +148,7 @@ class ParticleOverlay(QWidget):
         p.decay = 0.01
         self._particles.append(p)
 
-    def emit_sweat(self, x, y):
+    def emit_sweat(self, x: float, y: float) -> None:
         if not self._can_emit(3):
             return
         sweat_offset = 10
@@ -152,7 +163,7 @@ class ParticleOverlay(QWidget):
             p.decay = 0.02
             self._particles.append(p)
 
-    def emit_poop(self, x, y):
+    def emit_poop(self, x: float, y: float) -> None:
         if not self._can_emit(1):
             return
         color = QColor(139, 90, 43)
@@ -161,27 +172,36 @@ class ParticleOverlay(QWidget):
         p.decay = 0.015
         self._particles.append(p)
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop the particle timer for clean shutdown."""
         self._timer.stop()
 
     # --- Internal ---
 
-    def _tick(self):
+    def _font_for(self, size: int) -> QFont:
+        """Return a cached bold font for *size* (sizes are bounded ints)."""
+        font = self._font_cache.get(size)
+        if font is None:
+            font = QFont("Arial", size)
+            font.setBold(True)
+            self._font_cache[size] = font
+        return font
+
+    def _tick(self) -> None:
         self._particles = [p for p in self._particles if p.update()]
         if self._particles:
             self.update()
 
-    def paintEvent(self, event):
+    def paintEvent(self, event: QPaintEvent) -> None:
         if not self._particles:
             return
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
+        scratch = self._scratch_color
         for p in self._particles:
-            color = QColor(p.color)
-            color.setAlphaF(max(0.0, p.life))
-            painter.setPen(color)
-            font = QFont("Arial", p.size)
-            font.setBold(True)
-            painter.setFont(font)
+            base = p.color
+            scratch.setRgb(base.red(), base.green(), base.blue())
+            scratch.setAlphaF(max(0.0, min(1.0, p.life)))
+            painter.setPen(scratch)
+            painter.setFont(self._font_for(p.size))
             painter.drawText(int(p.pos.x()), int(p.pos.y()), p.char)

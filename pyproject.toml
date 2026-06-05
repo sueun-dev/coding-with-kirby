@@ -1,6 +1,6 @@
 [project]
 name = "coding-with-kirby"
-version = "2.3.0"
+version = "2.4.0"
 description = "A desktop Kirby pet that lives on your screen while you code."
 readme = "README.md"
 requires-python = ">=3.9"

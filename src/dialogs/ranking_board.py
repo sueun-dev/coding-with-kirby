@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from typing import Any, Optional
+
 from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QScrollArea, QWidget
-from PyQt5.QtGui import QFont, QColor, QPainter, QLinearGradient
+from PyQt5.QtGui import QFont, QColor, QPainter, QLinearGradient, QPaintEvent
 from PyQt5.QtCore import Qt, QTimer, QRectF
 
 from utils.utils import (
@@ -12,10 +14,16 @@ from utils.utils import (
 )
 
 
+def _entry_level(entry: dict) -> float:
+    """Return an entry's level as a number, treating bad values as 0."""
+    level = entry.get("level", 0)
+    return level if isinstance(level, (int, float)) else 0
+
+
 class RankingBoard(QDialog):
     """Styled ranking board with auto-refresh."""
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Ranking Board")
         self.setFixedSize(*RANKING_WINDOW_SIZE)
@@ -39,18 +47,21 @@ class RankingBoard(QDialog):
         self._scroll.setWidget(self._content)
         layout.addWidget(self._scroll)
 
-        self._last_data = None  # avoid rebuilding if unchanged
+        self._last_data: Optional[list] = None  # avoid rebuilding if unchanged
         self._refresh()
 
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._refresh)
         self._timer.start(RANKING_REFRESH_MS)
 
-    def _refresh(self):
+    def _refresh(self) -> None:
         ranking = load_json_safe(RANKING_FILE, default=[])
         if not isinstance(ranking, list):
             ranking = []
-        ranking.sort(key=lambda e: e.get("level", 0), reverse=True)
+        # Tolerate a hand-edited or corrupt file: drop non-dict rows and
+        # sort by a coerced numeric level so a null level can't raise.
+        ranking = [e for e in ranking if isinstance(e, dict)]
+        ranking.sort(key=_entry_level, reverse=True)
 
         # Skip rebuild if data hasn't changed
         if ranking == self._last_data:
@@ -85,7 +96,7 @@ class RankingBoard(QDialog):
 class RankingRow(QWidget):
     """Single row in the ranking board."""
 
-    def __init__(self, rank, name, level, size):
+    def __init__(self, rank: str, name: str, level: Any, size: Any) -> None:
         super().__init__()
         self._rank = rank
         self._name = name
@@ -93,7 +104,7 @@ class RankingRow(QWidget):
         self._size = size
         self.setFixedHeight(RANKING_ROW_HEIGHT)
 
-    def paintEvent(self, event):
+    def paintEvent(self, event: QPaintEvent) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 

@@ -2,17 +2,24 @@
 
 from __future__ import annotations
 
-from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel
+from typing import Optional, TYPE_CHECKING
+
+from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QWidget
 from PyQt5.QtGui import QFont
 from PyQt5.QtCore import Qt
 
 from utils.utils import ACHIEVEMENTS, is_achievement_met
 
+if TYPE_CHECKING:
+    from core.main_controller import MainController
+
 
 class StatsDialog(QDialog):
     """Shows detailed Kirby stats and achievements."""
 
-    def __init__(self, controller, parent=None):
+    def __init__(
+        self, controller: "MainController", parent: Optional[QWidget] = None
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Kirby Stats")
         self.setFixedSize(400, 520)
@@ -28,7 +35,7 @@ class StatsDialog(QDialog):
         layout.addStretch()
 
     @staticmethod
-    def _build_header(layout, ctrl):
+    def _build_header(layout: QVBoxLayout, ctrl: "MainController") -> None:
         title = QLabel(f"📊 {ctrl.username}'s Kirby")
         title.setFont(QFont("Arial", 16, QFont.Bold))
         title.setAlignment(Qt.AlignCenter)
@@ -36,7 +43,7 @@ class StatsDialog(QDialog):
         layout.addWidget(title)
 
     @staticmethod
-    def _build_stats(layout, ctrl):
+    def _build_stats(layout: QVBoxLayout, ctrl: "MainController") -> None:
         stats = [
             f"Level: {ctrl.level}",
             f"XP: {ctrl.xp} / {ctrl.xp_for_next_level}",
@@ -54,7 +61,7 @@ class StatsDialog(QDialog):
             layout.addWidget(lbl)
 
     @staticmethod
-    def _build_achievements(layout, ctrl):
+    def _build_achievements(layout: QVBoxLayout, ctrl: "MainController") -> None:
         ach_title = QLabel("🏆 Achievements")
         ach_title.setFont(QFont("Arial", 14, QFont.Bold))
         ach_title.setStyleSheet("color: #FFD700; margin-top: 16px; margin-bottom: 4px;")
