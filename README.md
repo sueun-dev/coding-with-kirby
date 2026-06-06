@@ -92,7 +92,7 @@ python3 -m pytest
 ### Technical
 - **Mission Control compatible** — Kirby stays visible during F3, Spaces, and full-screen apps
 - **Menu bar tray icon** — All controls live in the macOS menu bar. Left-click to feed, right-click for full menu
-- **Particle system** — Full-screen transparent overlay with eat, heart, sleep, level-up, sweat, and achievement effects
+- **Particle system** — Full-screen transparent overlay with eat, heart, achievement, level-up, sleep, sweat, and poop effects
 - **Thought bubbles** — Kirby tells you what he's thinking with smooth fade-in/out
 - **Named tuning constants** — Gameplay, physics, and timing values are named and centralized in `utils.py`
 - **Fully type-annotated** — Every public function carries parameter and return type hints
@@ -133,7 +133,7 @@ coding-with-kirby/
 │   │   └── ranking_board.py       # Leaderboard with auto-refresh
 │   └── utils/
 │       ├── utils.py               # All constants, validators, JSON I/O
-│       ├── particles.py           # Full-screen particle overlay (6 presets)
+│       ├── particles.py           # Full-screen particle overlay (eat, heart, achievement, level-up, sleep, sweat, poop)
 │       └── macos_window.py        # Cocoa window pinning for Mission Control
 ├── tests/
 │   ├── test_utils.py              # Constants, validators, JSON I/O
